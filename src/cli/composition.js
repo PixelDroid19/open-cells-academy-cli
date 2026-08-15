@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { lstat, mkdir, readFile, readdir, rm } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, rmdir, unlink } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { createRequire as createRequireDefault } from 'node:module';
 
@@ -8,7 +9,7 @@ import { ScaffoldPlan } from '../domain/scaffold-plan.js';
 import { normalizeRelativePath } from '../domain/path-policy.js';
 import { WorkspaceSession, typedError } from '../domain/workspace-session.js';
 import { NodeFilesystem } from '../adapters/node/node-filesystem.js';
-import { isWithin } from '../adapters/vite/stage-capture.js';
+import { isWithin, sameIdentity } from '../adapters/vite/stage-capture.js';
 import { NodeProcessRunner } from '../adapters/node/process-runner.js';
 import { FileWorkspaceLock } from '../adapters/node/file-workspace-lock.js';
 import { NodePackageSelf } from '../adapters/node/package-self.js';
@@ -58,6 +59,48 @@ const PUBLIC_TOOL_SPECS = Object.freeze({
   vitest: Object.freeze({ specifier: 'vitest', condition: 'vitest' }),
   wtr: Object.freeze({ specifier: '@web/test-runner', condition: 'wtr' })
 });
+
+async function removePortablePackRoot(root, rootIdentity) {
+  const currentRoot = await lstat(root);
+  if (!currentRoot.isDirectory() || currentRoot.isSymbolicLink() || !sameIdentity(currentRoot, rootIdentity)) {
+    throw typedError('PACK_CLEANUP_FAILED');
+  }
+  const rootEntries = await readdir(root);
+  if (rootEntries.length === 0) {
+    await rmdir(root);
+    return;
+  }
+  if (rootEntries.length !== 1 || rootEntries[0] !== 'archive') {
+    throw typedError('PACK_CLEANUP_FAILED');
+  }
+  const archive = path.join(root, 'archive');
+  const archiveIdentity = await lstat(archive);
+  if (!archiveIdentity.isDirectory() || archiveIdentity.isSymbolicLink()) {
+    throw typedError('PACK_CLEANUP_FAILED');
+  }
+  const archiveEntries = await readdir(archive);
+  if (archiveEntries.length > 1) {
+    throw typedError('PACK_CLEANUP_FAILED');
+  }
+  if (archiveEntries.length === 1) {
+    const tarball = path.join(archive, archiveEntries[0]);
+    const tarballIdentity = await lstat(tarball);
+    if (!tarballIdentity.isFile() || tarballIdentity.isSymbolicLink() || !/^open-cells-academy-cli-\d+\.\d+\.\d+\.tgz$/.test(archiveEntries[0])) {
+      throw typedError('PACK_CLEANUP_FAILED');
+    }
+    await unlink(tarball);
+  }
+  const archiveAfter = await lstat(archive);
+  if (!sameIdentity(archiveAfter, archiveIdentity) || (await readdir(archive)).length !== 0) {
+    throw typedError('PACK_CLEANUP_FAILED');
+  }
+  await rmdir(archive);
+  const rootAfter = await lstat(root);
+  if (!sameIdentity(rootAfter, rootIdentity) || (await readdir(root)).length !== 0) {
+    throw typedError('PACK_CLEANUP_FAILED');
+  }
+  await rmdir(root);
+}
 
 async function resolvePublicTool(name, candidateRoot, createRequireFrom) {
   const spec = PUBLIC_TOOL_SPECS[name];
@@ -234,18 +277,21 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, createRequi
     (packageSelf === undefined
       ? undefined
       : async request => {
-          const toolsPath = path.join(request.session.root, 'tools');
+          let temporaryRoot;
+          let temporaryIdentity;
           try {
-            await rm(toolsPath, { recursive: true, force: false });
-          } catch {}
-          const packed = await packageSelf.packSelf('tools', request);
-          const fileName = path.basename(packed.tarballPath);
-          const content = await readFile(packed.tarballPath);
-          const artifact = Object.freeze({ fileName, content: new Uint8Array(content), integrity: packed.integrity });
-          try {
-            await rm(path.dirname(packed.tarballPath), { recursive: true, force: false });
-          } catch {}
-          return artifact;
+            temporaryRoot = await mkdtemp(path.join(api?.packageTempRoot ?? os.tmpdir(), 'open-cells-academy-cli-pack-'));
+            temporaryIdentity = await lstat(temporaryRoot);
+            const packSession = await WorkspaceSession.openDirectory(temporaryRoot, filesystem);
+            const packed = await packageSelf.packSelf('archive', Object.freeze({ ...request, session: packSession }));
+            const fileName = path.basename(packed.tarballPath);
+            const content = await readFile(packed.tarballPath);
+            return Object.freeze({ fileName, content: new Uint8Array(content), integrity: packed.integrity });
+          } finally {
+            if (temporaryRoot !== undefined) {
+              await removePortablePackRoot(temporaryRoot, temporaryIdentity);
+            }
+          }
         });
   const clock = api?.clock ?? (() => new Date());
   const prompt = api?.prompt;

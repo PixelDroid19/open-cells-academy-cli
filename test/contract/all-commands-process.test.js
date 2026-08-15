@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -166,6 +166,42 @@ test('contract: component:create follows the README relative scaffold path from 
   const inlineResult = await cli.run(['component:create', '--scaffold', '{"name":"inline-component","namespace":"@academy"}'], { env: {} });
   assert.equal(inlineResult.exitCode, 0, `inline component scaffold failed: ${inlineResult.stderr}`);
   assert.equal(JSON.parse(await readFile(path.join(root, 'inline-component', 'package.json'), 'utf8')).name, '@academy/inline-component');
+});
+
+test('contract: default project creation preserves a caller-owned tools directory while packing in an owned temporary session', async t => {
+  const root = await emptyDirectory(t);
+  const packageTempRoot = await mkdtemp(path.join(os.tmpdir(), 'open-cells-academy-pack-parent-'));
+  t.after(async () => {
+    await rm(packageTempRoot, { recursive: true, force: true });
+  });
+  const tools = path.join(root, 'tools');
+  await mkdir(tools);
+  await writeFile(path.join(tools, 'sentinel.txt'), 'caller-owned\n');
+
+  const { packLocalCli: ignored, ...api } = createFakeToolApi();
+  api.packageTempRoot = packageTempRoot;
+  const calls = [];
+  api.packageSelf = {
+    async packSelf(destination, request) {
+      calls.push(Object.freeze({ destination, sessionRoot: request.session.root }));
+      const output = path.join(request.session.root, destination);
+      await mkdir(output);
+      const tarballPath = path.join(output, 'open-cells-academy-cli-0.1.0.tgz');
+      await writeFile(tarballPath, 'owned-cli');
+      return Object.freeze({ tarballPath, integrity: 'sha512-Zml4dHVyZQ==' });
+    }
+  };
+
+  const { dispatch } = resolveDispatch({ api, cwd: root });
+  const cli = registryFor(dispatch);
+  const result = await cli.run(['app:create', '--scaffold', '{"name":"preserved-tools-app","scaffold":"blank"}'], { env: {} });
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.equal(await readFile(path.join(tools, 'sentinel.txt'), 'utf8'), 'caller-owned\n');
+  assert.equal(calls.length, 1);
+  assert.notEqual(calls[0].sessionRoot, root);
+  assert.equal(calls[0].destination, 'archive');
+  assert.deepEqual(await readdir(packageTempRoot), []);
 });
 
 test('contract: only creation commands accept an empty directory without package metadata', async t => {

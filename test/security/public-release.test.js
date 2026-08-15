@@ -44,6 +44,8 @@ test('public release has one consistent installable package identity', async () 
   assert.equal(manifest.bugs?.url, `https://github.com/${REPOSITORY}/issues`);
   assert.deepEqual(manifest.publishConfig, { access: 'public', registry: 'https://registry.npmjs.org/' });
   assert.equal(manifest.files.includes('LICENSE'), true);
+  assert.equal(manifest.scripts?.['verify:release'], 'node --test --test-concurrency=1 test/security/public-release.test.js test/security/release-gates.test.js');
+  assert.equal(manifest.scripts?.prepack, 'npm run verify:release');
 
   assert.equal(lock.name, manifest.name);
   assert.equal(lock.version, manifest.version);

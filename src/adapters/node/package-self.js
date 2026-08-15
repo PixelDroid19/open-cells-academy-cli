@@ -10,7 +10,9 @@ const FINAL_NAME = 'open-cells-academy-cli';
 const FINAL_VERSION = '0.1.0';
 const FINAL_FILENAME = 'open-cells-academy-cli-0.1.0.tgz';
 const OWNED_PREFIX = '.open-cells-academy-pack-';
-const SOURCE_PATHS = Object.freeze(['bin', 'src', 'templates', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md']);
+const SOURCE_PATHS = Object.freeze(['bin', 'src', 'templates', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'package-self-manifest.json']);
+const SOURCE_DIRECTORIES = new Set(['bin', 'src', 'templates']);
+const SOURCE_FILES = new Set(SOURCE_PATHS.filter(candidate => !SOURCE_DIRECTORIES.has(candidate)));
 const DISALLOWED_TEXT = Object.freeze([
   ['NPM', 'TOKEN'].join('_'),
   ['_auth', 'Token'].join(''),
@@ -38,7 +40,7 @@ function containsDisallowedUrl(text) {
     }
     const publicRegistry = candidate.protocol === 'https:' && candidate.hostname === 'registry.npmjs.org' && (candidate.port === '' || candidate.port === '443');
     const localFixture = candidate.protocol === 'http:' && candidate.hostname === '127.0.0.1';
-    const publicRepository = candidate.protocol === 'https:' && candidate.hostname === 'github.com' && candidate.pathname.startsWith('/PixelDroid19/open-cells-academy-cli');
+    const publicRepository = candidate.protocol === 'https:' && candidate.hostname === 'github.com' && /^\/PixelDroid19\/open-cells-academy-cli(?:\.git)?(?:\/|$)/.test(candidate.pathname);
     const apacheLicense = candidate.protocol === 'http:' && candidate.hostname === 'www.apache.org' && candidate.pathname.startsWith('/licenses/');
     if (candidate.username !== '' || candidate.password !== '' || (!publicRegistry && !localFixture && !publicRepository && !apacheLicense)) {
       return true;
@@ -169,6 +171,16 @@ function tarSize(header) {
   return Number.parseInt(raw, 8);
 }
 
+function isAllowedArchiveEntry(relative, type) {
+  if (relative === 'package.json') return type === '0';
+  if (SOURCE_FILES.has(relative)) return type === '0';
+  for (const directory of SOURCE_DIRECTORIES) {
+    if (relative === directory) return type === '5';
+    if (relative.startsWith(`${directory}/`)) return true;
+  }
+  return false;
+}
+
 function assertArchive(bytes) {
   let archive;
   try {
@@ -179,6 +191,7 @@ function assertArchive(bytes) {
   let offset = 0;
   let sawMetadata = false;
   let sawBin = false;
+  const sawSources = new Set();
   while (offset + 512 <= archive.length) {
     const header = archive.subarray(offset, offset + 512);
     if (header.every(byte => byte === 0)) {
@@ -193,7 +206,7 @@ function assertArchive(bytes) {
       throw typedError('PACK_INVALID');
     }
     const relative = name.slice('package/'.length);
-    if (relative.split('/').includes('node_modules') || !['0', '5'].includes(type)) {
+    if (relative.split('/').includes('node_modules') || !['0', '5'].includes(type) || !isAllowedArchiveEntry(relative, type)) {
       throw typedError('PACK_INVALID');
     }
     const contentStart = offset + 512;
@@ -208,17 +221,40 @@ function assertArchive(bytes) {
     }
     if (relative === 'package.json') {
       const metadata = parseJson(content.toString('utf8'), 'PACK_INVALID');
-      if (metadata?.name !== FINAL_NAME || metadata?.version !== FINAL_VERSION || metadata?.bin?.cells !== 'bin/cells.js') {
+      const expectedKeys = ['bin', 'bugs', 'description', 'engines', 'files', 'homepage', 'license', 'name', 'publishConfig', 'repository', 'type', 'version'];
+      if (
+        metadata?.name !== FINAL_NAME ||
+        metadata?.version !== FINAL_VERSION ||
+        metadata?.type !== 'module' ||
+        metadata?.bin?.cells !== 'bin/cells.js' ||
+        metadata?.engines?.node !== '>=22.12' ||
+        metadata?.license !== 'Apache-2.0' ||
+        metadata?.repository?.url !== 'git+https://github.com/PixelDroid19/open-cells-academy-cli.git' ||
+        metadata?.homepage !== 'https://github.com/PixelDroid19/open-cells-academy-cli#readme' ||
+        metadata?.bugs?.url !== 'https://github.com/PixelDroid19/open-cells-academy-cli/issues' ||
+        metadata?.publishConfig?.access !== 'public' ||
+        metadata?.publishConfig?.registry !== 'https://registry.npmjs.org/' ||
+        JSON.stringify(metadata.files) !== JSON.stringify(SOURCE_PATHS) ||
+        JSON.stringify(Object.keys(metadata).sort()) !== JSON.stringify(expectedKeys)
+      ) {
         throw typedError('PACK_INVALID');
       }
       sawMetadata = true;
     }
+    if (relative === 'package-self-manifest.json') {
+      assertManifest(parseJson(content.toString('utf8'), 'PACK_INVALID'));
+    }
     if (relative === 'bin/cells.js') {
       sawBin = true;
     }
+    for (const source of SOURCE_PATHS) {
+      if (relative === source || (SOURCE_DIRECTORIES.has(source) && relative.startsWith(`${source}/`))) {
+        sawSources.add(source);
+      }
+    }
     offset = contentStart + Math.ceil(size / 512) * 512;
   }
-  if (!sawMetadata || !sawBin || offset > archive.length) {
+  if (!sawMetadata || !sawBin || sawSources.size !== SOURCE_PATHS.length || offset > archive.length) {
     throw typedError('PACK_INVALID');
   }
 }

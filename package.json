@@ -24,6 +24,10 @@
     "registry": "https://registry.npmjs.org/"
   },
   "type": "module",
+  "scripts": {
+    "verify:release": "node --test --test-concurrency=1 test/security/public-release.test.js test/security/release-gates.test.js",
+    "prepack": "npm run verify:release"
+  },
   "bin": {
     "cells": "bin/cells.js"
   },

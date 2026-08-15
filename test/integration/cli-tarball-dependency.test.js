@@ -81,6 +81,56 @@ function ustarArchive(entries) {
   return gzipSync(Buffer.concat([...blocks, Buffer.alloc(1024)]));
 }
 
+function packedMetadata() {
+  return {
+    name: 'open-cells-academy-cli',
+    version: '0.1.0',
+    description: 'Educational OpenCells CLI for creating runnable applications and Lit components.',
+    license: 'Apache-2.0',
+    repository: { type: 'git', url: 'git+https://github.com/PixelDroid19/open-cells-academy-cli.git' },
+    homepage: 'https://github.com/PixelDroid19/open-cells-academy-cli#readme',
+    bugs: { url: 'https://github.com/PixelDroid19/open-cells-academy-cli/issues' },
+    publishConfig: { access: 'public', registry: 'https://registry.npmjs.org/' },
+    type: 'module',
+    bin: { cells: 'bin/cells.js' },
+    engines: { node: '>=22.12' },
+    files: ['bin', 'src', 'templates', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'package-self-manifest.json']
+  };
+}
+
+function packedSelfManifest() {
+  const metadata = packedMetadata();
+  return {
+    schema: 1,
+    package: {
+      name: metadata.name,
+      version: metadata.version,
+      description: metadata.description,
+      license: metadata.license,
+      repository: metadata.repository,
+      homepage: metadata.homepage,
+      bugs: metadata.bugs,
+      publishConfig: metadata.publishConfig,
+      bin: metadata.bin,
+      engines: metadata.engines
+    }
+  };
+}
+
+function validUstarEntries(extra) {
+  return [
+    { name: 'package/package.json', content: JSON.stringify(packedMetadata()) },
+    { name: 'package/bin/cells.js', content: 'process.stdout.write("0.1.0\\n");\n' },
+    { name: 'package/src/index.js', content: 'export default null;\n' },
+    { name: 'package/templates/index.js', content: 'export default null;\n' },
+    { name: 'package/README.md', content: '# OpenCells Academy CLI\n' },
+    { name: 'package/LICENSE', content: 'Apache-2.0\n' },
+    { name: 'package/THIRD_PARTY_NOTICES.md', content: '# Third-party notices\n' },
+    { name: 'package/package-self-manifest.json', content: JSON.stringify(packedSelfManifest()) },
+    extra
+  ];
+}
+
 function maliciousUstarRunner() {
   return Object.freeze({
     async run(request) {
@@ -88,11 +138,26 @@ function maliciousUstarRunner() {
       assert.equal(request.file, 'npm');
       assert.ok(destination);
       const output = destination.slice('--pack-destination='.length);
-      const archive = ustarArchive([
-        { name: 'package/package.json', content: JSON.stringify({ name: 'open-cells-academy-cli', version: '0.1.0', bin: { cells: 'bin/cells.js' } }) },
-        { name: 'package/bin/cells.js', content: 'process.stdout.write("0.1.0\\n");\n' },
-        { prefix: `package/${'long-directory-'.repeat(8)}entry`, name: 'node_modules/evil.js', content: 'export default null;\n' }
-      ]);
+      const archive = ustarArchive(validUstarEntries({ prefix: `package/${'long-directory-'.repeat(8)}entry`, name: 'node_modules/evil.js', content: 'export default null;\n' }));
+      await writeFile(path.join(output, 'open-cells-academy-cli-0.1.0.tgz'), archive, { flag: 'wx' });
+      return Object.freeze({
+        exitCode: 0,
+        signal: null,
+        stdout: JSON.stringify([{ name: 'open-cells-academy-cli', version: '0.1.0', filename: 'open-cells-academy-cli-0.1.0.tgz', integrity: 'sha512-Zml4dHVyZQ==' }]),
+        stderr: ''
+      });
+    }
+  });
+}
+
+function unlistedUstarRunner() {
+  return Object.freeze({
+    async run(request) {
+      const destination = request.args.find(argument => argument.startsWith('--pack-destination='));
+      assert.equal(request.file, 'npm');
+      assert.ok(destination);
+      const output = destination.slice('--pack-destination='.length);
+      const archive = ustarArchive(validUstarEntries({ name: 'package/unlisted.js', content: 'export default null;\n' }));
       await writeFile(path.join(output, 'open-cells-academy-cli-0.1.0.tgz'), archive, { flag: 'wx' });
       return Object.freeze({
         exitCode: 0,
@@ -147,13 +212,13 @@ test('break: self packing stops creating a final public identity archive with on
   assert.ok(names.includes('package/LICENSE'));
   assert.ok(names.includes('package/THIRD_PARTY_NOTICES.md'));
   const packedMetadata = JSON.parse(metadataEntry.content.toString('utf8'));
-  assert.deepEqual(packedMetadata.files, ['bin', 'src', 'templates', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md']);
+  assert.deepEqual(packedMetadata.files, ['bin', 'src', 'templates', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'package-self-manifest.json']);
   assert.equal(packedMetadata.license, 'Apache-2.0');
   assert.equal(packedMetadata.repository.url, 'git+https://github.com/PixelDroid19/open-cells-academy-cli.git');
   assert.equal(packedMetadata.publishConfig.registry, 'https://registry.npmjs.org/');
   assert.equal(names.some(name => name.split('/').includes('node_modules')), false);
   assert.equal(names.some(name => name.includes('test/')), false);
-  assert.equal(names.some(name => name.includes('package-self-manifest')), false);
+  assert.equal(names.includes('package/package-self-manifest.json'), true);
   assert.equal(entries.some(entry => /(?:NPM_TOKEN|_authToken|password=)/i.test(entry.content.toString('utf8'))), false);
 });
 
@@ -163,7 +228,8 @@ test('break: archive validation ignores a bare scheme but rejects nonpublic comp
     ['private-host', 'https://private.example/'],
     ['http', 'http://registry.npmjs.org/'],
     ['credentials', 'https://user:secret@registry.npmjs.org/'],
-    ['port', 'https://registry.npmjs.org:444/']
+    ['port', 'https://registry.npmjs.org:444/'],
+    ['github-prefix', 'https://github.com/PixelDroid19/open-cells-academy-cli-evil/']
   ]) {
     const candidateRoot = await candidateWithRegistryUrl(t, url);
     const instance = new NodePackageSelf({ candidateRoot, processRunner: new NodeProcessRunner(), filesystem });
@@ -201,6 +267,17 @@ test('break: a USTAR prefix stops hiding node_modules from archive path validati
     return true;
   });
   assert.equal((await readdir(root)).includes('invalid-ustar'), false);
+});
+
+test('break: archive validation rejects a benign file outside the declared package allowlist', async t => {
+  const { filesystem, root, session } = await fixture(t);
+  const instance = new NodePackageSelf({ candidateRoot, processRunner: unlistedUstarRunner(), filesystem });
+
+  await assert.rejects(instance.packSelf('invalid-unlisted', { session }), error => {
+    assert.equal(error?.code, 'PACK_INVALID');
+    return true;
+  });
+  assert.equal((await readdir(root)).includes('invalid-unlisted'), false);
 });
 
 test('break: self-pack destinations stop rejecting absolute, traversal, symlink, and collision paths before npm pack', async t => {
@@ -276,4 +353,14 @@ test('break: a generated project stops resolving cells from an external PATH ins
   const metadata = JSON.parse(await readFile(path.join(target, 'package.json'), 'utf8'));
   assert.equal(metadata.devDependencies['open-cells-academy-cli'], `file:tools/${tarballName}`);
   assert.equal((await readdir(path.join(target, 'tools'))).includes(tarballName), true);
+
+  const nested = await new NodeProcessRunner().run({
+    file: path.join(target, 'node_modules', '.bin', 'cells'),
+    args: ['app:create', '--scaffold', '{"name":"nested-app","scaffold":"blank"}'],
+    cwd: target,
+    env: { PATH: `${cleanBin}${path.delimiter}${process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'}` }
+  });
+  assert.equal(nested.exitCode, 0, nested.stderr);
+  const nestedMetadata = JSON.parse(await readFile(path.join(target, 'nested-app', 'package.json'), 'utf8'));
+  assert.match(nestedMetadata.devDependencies['open-cells-academy-cli'], /^file:tools\/open-cells-academy-cli-0\.1\.0\.tgz$/);
 });
