@@ -61,6 +61,7 @@
   },
   "devDependencies": {
     "@open-wc/scoped-elements": "3.0.10",
+    "@vitest/coverage-v8": "3.2.4",
     "@webcomponents/scoped-custom-element-registry": "0.0.10",
     "happy-dom": "20.11.2"
   },
