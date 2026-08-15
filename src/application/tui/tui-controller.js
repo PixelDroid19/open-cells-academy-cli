@@ -666,13 +666,14 @@ export class TuiController {
   async #runUnitTests() {
     const isApp = this.#state.workspace.type === 'app';
     const commandName = isApp ? 'app:test' : 'component:test';
+    const runnerArgs = this.#state.workspace.testRunner === 'wtr' ? ['--wtr'] : [];
 
     try {
       await this.#supervisor.startTask({
         type: 'unit',
-        logicalCommand: commandName,
+        logicalCommand: [commandName, ...runnerArgs].join(' '),
         file: process.execPath,
-        args: [this.#cliEntrypoint, commandName],
+        args: [this.#cliEntrypoint, commandName, ...runnerArgs],
         cwd: this.#state.workspace.root
       });
     } catch {
@@ -683,13 +684,14 @@ export class TuiController {
   async #runCoverage() {
     const isApp = this.#state.workspace.type === 'app';
     const commandName = isApp ? 'app:test' : 'component:test';
+    const runnerArgs = this.#state.workspace.testRunner === 'wtr' ? ['--wtr'] : [];
 
     try {
       await this.#supervisor.startTask({
         type: 'coverage',
-        logicalCommand: `${commandName} --coverage`,
+        logicalCommand: [commandName, ...runnerArgs, '--coverage'].join(' '),
         file: process.execPath,
-        args: [this.#cliEntrypoint, commandName, '--coverage'],
+        args: [this.#cliEntrypoint, commandName, ...runnerArgs, '--coverage'],
         cwd: this.#state.workspace.root
       });
     } catch {

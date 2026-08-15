@@ -152,6 +152,76 @@ test('integration: TuiController invokes an injected absolute CLI entrypoint fro
   await controller.close();
 });
 
+test('integration: TuiController selects WTR flags for legacy unit and coverage tasks', async t => {
+  const { stdin, stdout } = createMockTerminal();
+  const requests = [];
+  const controller = new TuiController({
+    workspace: {
+      name: '@academy/legacy-button',
+      type: 'component',
+      root: '/tmp/legacy-component',
+      testRunner: 'wtr'
+    },
+    stdin,
+    stdout,
+    supervisor: {
+      async startTask(request) {
+        requests.push(request);
+        return { id: `task-${requests.length}` };
+      },
+      async stopAll() {}
+    },
+    ringBuffer: new RingBuffer({ capacity: 10 }),
+    titleAnimator: new TitleAnimator({ enabled: false }),
+    cliEntrypoint: '/opt/cells/bin/cells.js'
+  });
+  t.after(async () => controller.close());
+
+  await controller.start();
+  stdin.write('u');
+  await new Promise(resolve => setTimeout(resolve, 10));
+  stdin.write('c');
+  await new Promise(resolve => setTimeout(resolve, 10));
+
+  assert.deepEqual(requests[0].args, ['/opt/cells/bin/cells.js', 'component:test', '--wtr']);
+  assert.deepEqual(requests[1].args, ['/opt/cells/bin/cells.js', 'component:test', '--wtr', '--coverage']);
+});
+
+test('integration: TuiController keeps Vitest unit and coverage arguments for modern projects', async t => {
+  const { stdin, stdout } = createMockTerminal();
+  const requests = [];
+  const controller = new TuiController({
+    workspace: {
+      name: '@academy/modern-button',
+      type: 'component',
+      root: '/tmp/modern-component',
+      testRunner: 'vitest'
+    },
+    stdin,
+    stdout,
+    supervisor: {
+      async startTask(request) {
+        requests.push(request);
+        return { id: `task-${requests.length}` };
+      },
+      async stopAll() {}
+    },
+    ringBuffer: new RingBuffer({ capacity: 10 }),
+    titleAnimator: new TitleAnimator({ enabled: false }),
+    cliEntrypoint: '/opt/cells/bin/cells.js'
+  });
+  t.after(async () => controller.close());
+
+  await controller.start();
+  stdin.write('u');
+  await new Promise(resolve => setTimeout(resolve, 10));
+  stdin.write('c');
+  await new Promise(resolve => setTimeout(resolve, 10));
+
+  assert.deepEqual(requests[0].args, ['/opt/cells/bin/cells.js', 'component:test']);
+  assert.deepEqual(requests[1].args, ['/opt/cells/bin/cells.js', 'component:test', '--coverage']);
+});
+
 test('integration: TuiController handles SIGTERM by stopping tasks and restoring terminal resources', async t => {
   const { stdin, stdout } = createMockTerminal();
   const rawModeCalls = [];

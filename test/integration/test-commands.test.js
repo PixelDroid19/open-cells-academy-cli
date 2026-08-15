@@ -116,6 +116,25 @@ test('red: test project supports WTR as the compatibility runner and a custom cw
   assert.match(config, new RegExp(`from\\s+'file://${junitEntry.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`));
 });
 
+test('red: WTR coverage requests reach the Web Test Runner executable', async t => {
+  const { root, session } = await workspace(t);
+  await writeWorkspaceFile(root, 'test/a.test.js', 'it("passes", () => {});\n');
+  const fake = createFakeTestToolchain();
+  const runner = new WtrRunner(
+    fake,
+    'web-test-runner',
+    path.join(root, 'cli-launcher', 'index.mjs'),
+    path.join(root, 'cli-junit', 'index.mjs')
+  );
+
+  const outcome = await testProject(testContext(session, runner, {
+    options: Object.freeze({ wtr: true, coverage: true })
+  }));
+
+  assert.equal(outcome.ok, true);
+  assert.equal(fake.wtrLast.args.includes('--coverage'), true);
+});
+
 test('red: test project prefers the project launcher and reports a missing launcher as a typed failure', async t => {
   const { root, session } = await workspace(t);
   await writeWorkspaceFile(root, 'test/a.test.js', 'it("passes", () => {});\n');

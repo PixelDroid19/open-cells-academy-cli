@@ -40,6 +40,7 @@ export function createSessionState({
       name: terminalText(workspace.name, 'workspace'),
       type: terminalText(workspace.type, 'unknown'),
       root: String(workspace.root || process.cwd()),
+      testRunner: workspace.testRunner === 'wtr' ? 'wtr' : 'vitest',
       appConfigs: Object.freeze(Array.isArray(workspace.appConfigs) ? workspace.appConfigs.map(optionalTerminalText).filter(config => config !== undefined) : []),
       defaultAppConfig: optionalTerminalText(workspace.defaultAppConfig),
       defaultBuildConfig: optionalTerminalText(workspace.defaultBuildConfig)

@@ -117,6 +117,7 @@ export class WtrRunner {
     const args = ['--config', 'wtr.academy.config.mjs'];
     if (request.watch === true) args.push('--watch');
     if (request.updateSnapshots === true) args.push('--update-snapshots');
+    if (request.coverage === true) args.push('--coverage');
     try {
       const result = await this.#process.runProcess(Object.freeze({
         file: this.#wtrExecutable,

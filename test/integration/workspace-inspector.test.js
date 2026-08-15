@@ -47,6 +47,35 @@ test('integration: inspectWorkspace detects OpenCells Lit Component workspace', 
   const inspected = await inspectWorkspace(root);
   assert.equal(inspected.type, 'component');
   assert.equal(inspected.name, '@academy/my-button');
+  assert.equal(inspected.testRunner, 'vitest');
+});
+
+test('integration: inspectWorkspace detects WTR and Vitest from project test scripts', async t => {
+  const wtrRoot = await mkdtemp(path.join(os.tmpdir(), 'open-cells-wtr-comp-'));
+  const vitestRoot = await mkdtemp(path.join(os.tmpdir(), 'open-cells-vitest-comp-'));
+  t.after(() => Promise.all([
+    rm(wtrRoot, { recursive: true, force: true }),
+    rm(vitestRoot, { recursive: true, force: true })
+  ]));
+
+  await writeFile(path.join(wtrRoot, 'package.json'), JSON.stringify({
+    name: '@academy/legacy-button',
+    scripts: {
+      'test:wtr': 'cells lit-component:test --wtr',
+      'test:wtr:watch': 'cells lit-component:test --wtr --watch'
+    }
+  }));
+  await mkdir(path.join(wtrRoot, 'demo'));
+
+  await writeFile(path.join(vitestRoot, 'package.json'), JSON.stringify({
+    name: '@academy/modern-button',
+    scripts: { test: 'vitest run' },
+    devDependencies: { vitest: '3.2.4' }
+  }));
+  await mkdir(path.join(vitestRoot, 'demo'));
+
+  assert.equal((await inspectWorkspace(wtrRoot)).testRunner, 'wtr');
+  assert.equal((await inspectWorkspace(vitestRoot)).testRunner, 'vitest');
 });
 
 test('integration: inspectWorkspace handles empty or uninitialized directory non-destructively', async t => {

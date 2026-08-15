@@ -5,12 +5,13 @@ import { createSessionState, sessionReducer } from '../../src/domain/tui/session
 
 test('domain: sessionState initial structure and immutability', () => {
   const state = createSessionState({
-    workspace: { name: 'my-button', type: 'component', root: '/tmp/workspace' },
+    workspace: { name: 'my-button', type: 'component', root: '/tmp/workspace', testRunner: 'wtr' },
     language: 'en'
   });
 
   assert.equal(state.workspace.name, 'my-button');
   assert.equal(state.workspace.type, 'component');
+  assert.equal(state.workspace.testRunner, 'wtr');
   assert.equal(state.focusedPanel, 'commands');
   assert.equal(state.selectedCommandIndex, 0);
   assert.equal(state.searchQuery, '');
