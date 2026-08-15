@@ -58,7 +58,9 @@ test('public release has one consistent installable package identity', async () 
 
 test('public release documentation contains executable GitHub and Cells lifecycle examples', async () => {
   const readme = await readFile(path.join(ROOT, 'README.md'), 'utf8');
+  const releaseTarball = 'https://github.com/PixelDroid19/open-cells-academy-cli/releases/download/v0.1.0/open-cells-academy-cli-0.1.0.tgz';
   for (const expected of [
+    `npm install --global ${releaseTarball}`,
     'github:PixelDroid19/open-cells-academy-cli',
     'npm exec --yes --package=github:PixelDroid19/open-cells-academy-cli -- cells',
     'cells app:create --scaffold app.json',
@@ -76,6 +78,7 @@ test('public release documentation contains executable GitHub and Cells lifecycl
   ]) {
     assert.match(readme, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
+  assert.equal(readme.includes('npm install --global github:PixelDroid19/open-cells-academy-cli'), false);
 });
 
 test('public repository candidates contain no local paths, secrets, or private registries', async () => {

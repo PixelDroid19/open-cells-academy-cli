@@ -257,7 +257,7 @@ gh repo create PixelDroid19/open-cells-academy-cli --public --source=. --remote=
 From a new owned temporary directory:
 
 ```bash
-npm install --global-style --ignore-scripts --registry=https://registry.npmjs.org github:PixelDroid19/open-cells-academy-cli
+npm install --global https://github.com/PixelDroid19/open-cells-academy-cli/releases/download/v0.1.0/open-cells-academy-cli-0.1.0.tgz
 npm exec --yes --package=github:PixelDroid19/open-cells-academy-cli -- cells --version
 npm exec --yes --package=github:PixelDroid19/open-cells-academy-cli -- cells app:create --scaffold '{"name":"github-academy-app","scaffold":"blank"}'
 ```

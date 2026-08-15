@@ -33,7 +33,7 @@ one executable:
 Users can choose either workflow:
 
 ```bash
-npm install --global github:PixelDroid19/open-cells-academy-cli
+npm install --global https://github.com/PixelDroid19/open-cells-academy-cli/releases/download/v0.1.0/open-cells-academy-cli-0.1.0.tgz
 cells --help
 ```
 
