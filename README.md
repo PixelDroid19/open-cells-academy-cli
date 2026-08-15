@@ -42,6 +42,40 @@ After a future npm registry release, the shorter command will be:
 npx open-cells-academy-cli --help
 ```
 
+## Interactive terminal
+
+Run `cells` with no command, or explicitly run `cells tui`, from an interactive
+terminal to open the Academy TUI. It is a command launcher and local task
+supervisor; direct commands such as `cells component:test --coverage` keep
+their existing non-interactive behavior.
+
+```bash
+cells
+cells tui --no-animation
+cells --language es tui
+```
+
+The TUI uses these shortcuts: `s` serve, `r` restart the active server, `u`
+unit tests, `c` coverage, `e` E2E, `b` build, `p` preview, `i` locales, `d`
+component documentation, `+` create, `o` open a ready local URL, `l` filter
+logs, `/` search, `Tab` switch panels, `PgUp`/`PgDn` page logs, `Esc` cancel,
+and `q` quit. `Ctrl-C` always restores the terminal and stops tasks owned by
+the TUI.
+
+The TUI is deliberately disabled for pipes, CI, and `TERM=dumb`; both `cells`
+and `cells tui` print static localized help and exit successfully in those
+environments. `NO_COLOR` removes renderer colors.
+
+Legacy component aliases remain supported and resolve to their canonical
+commands: `lit-component:serve` and `lit-components:serve` map to
+`component:dev`; `lit-component:test`, `:documentation`, `:locales`,
+`:build:demo`, and `:lint` map to the corresponding `component:*` command.
+
+On POSIX, owned TUI tasks use an isolated process group. The Windows tree
+cleanup seam is unit-tested with an injected `taskkill` operation; a physical
+Windows runtime/Job Object validation is still pending, so this project does
+not claim that level of Windows cleanup verification yet.
+
 ## Create an application
 
 Create an empty directory and save this as `app.json`:

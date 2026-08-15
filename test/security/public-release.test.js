@@ -88,6 +88,7 @@ test('public repository candidates contain no local paths, secrets, or private r
   const packageFiles = new Set(['README.md', 'THIRD_PARTY_NOTICES.md', 'package.json', 'package-self-manifest.json']);
   const retiredIdentity = new RegExp(['academy', 'cli', 'next'].join('-'), 'i');
   const sessionTemp = new RegExp(`${path.sep}tmp${path.sep}codex-`, 'i');
+  const localFileUrl = /file:\/\/\/(?:home\/|run\/media\/|Users\/|[A-Za-z]:[\\/])/i;
   const hits = [];
 
   for (const relative of await publicFiles()) {
@@ -98,6 +99,8 @@ test('public repository candidates contain no local paths, secrets, or private r
     assert.equal(contents.includes(os.homedir()), false, `${relative} contains the development home path`);
     assert.equal(retiredIdentity.test(contents), false, `${relative} contains the retired development identity`);
     assert.equal(sessionTemp.test(contents), false, `${relative} contains a session-specific temporary path`);
+    assert.equal(localFileUrl.test(contents), false, `${relative} contains a local file URL`);
+    assert.equal(contents.split(/\r?\n/).some(line => /[ \t]+$/.test(line)), false, `${relative} contains trailing whitespace`);
     const patterns = [];
     if (packageRoots.some(prefix => relative.startsWith(prefix)) || packageFiles.has(relative)) {
       patterns.push(...packageForbidden);
