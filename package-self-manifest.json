@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "package": {
+    "name": "open-cells-academy-cli",
+    "version": "0.1.0",
+    "description": "Educational OpenCells CLI for creating runnable applications and Lit components.",
+    "license": "Apache-2.0",
+    "repository": {
+      "type": "git",
+      "url": "git+https://github.com/PixelDroid19/open-cells-academy-cli.git"
+    },
+    "homepage": "https://github.com/PixelDroid19/open-cells-academy-cli#readme",
+    "bugs": {
+      "url": "https://github.com/PixelDroid19/open-cells-academy-cli/issues"
+    },
+    "publishConfig": {
+      "access": "public",
+      "registry": "https://registry.npmjs.org/"
+    },
+    "bin": {
+      "cells": "bin/cells.js"
+    },
+    "engines": {
+      "node": ">=22.12"
+    }
+  }
+}

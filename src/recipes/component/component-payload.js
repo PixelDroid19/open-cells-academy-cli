@@ -1,0 +1,490 @@
+import { ScaffoldPlan } from '../../domain/scaffold-plan.js';
+import { typedError } from '../../domain/workspace-session.js';
+
+function stableJson(value) {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+function assertComponentOptions(options) {
+  if (
+    options === null ||
+    typeof options !== 'object' ||
+    Array.isArray(options) ||
+    typeof options.name !== 'string' ||
+    !/^[a-z0-9]+(?:-[a-z0-9]+)+$/.test(options.name) ||
+    typeof options.e2e !== 'boolean'
+  ) {
+    throw typedError('INVALID_INPUT', { field: 'component' });
+  }
+  return Object.freeze({ name: options.name, e2e: options.e2e });
+}
+
+function componentClassName(name) {
+  const candidate = name
+    .split('-')
+    .map(segment => `${segment.slice(0, 1).toUpperCase()}${segment.slice(1)}`)
+    .join('');
+  return /^\d/.test(candidate) ? `Component${candidate}` : candidate;
+}
+
+function messageKeys(name) {
+  return Object.freeze({
+    heading: `${name}.heading`,
+    continue: `${name}.continue`,
+    demoTitle: `${name}.demo.title`,
+    demoLanguageEn: `${name}.demo.language.en`,
+    demoLanguageEs: `${name}.demo.language.es`,
+    demoEvent: `${name}.demo.event`,
+    demoEventEmpty: `${name}.demo.event.empty`
+  });
+}
+
+function componentCatalogs(name, keys) {
+  const displayName = name.replace(/-/g, ' ');
+  return Object.freeze({
+    en: Object.freeze({
+      [keys.heading]: `${displayName} ready`,
+      [keys.continue]: 'Continue',
+      [keys.demoTitle]: `${displayName} demo`,
+      [keys.demoLanguageEn]: 'English',
+      [keys.demoLanguageEs]: 'Spanish',
+      [keys.demoEvent]: 'Event: {event}',
+      [keys.demoEventEmpty]: 'Activate the component to see its event.'
+    }),
+    es: Object.freeze({
+      [keys.heading]: `${displayName} listo`,
+      [keys.continue]: 'Continuar',
+      [keys.demoTitle]: `Demostración de ${displayName}`,
+      [keys.demoLanguageEn]: 'Inglés',
+      [keys.demoLanguageEs]: 'Español',
+      [keys.demoEvent]: 'Evento: {event}',
+      [keys.demoEventEmpty]: 'Activa el componente para ver su evento.'
+    })
+  });
+}
+
+function entrypointSource(name, className) {
+  return `import '@webcomponents/scoped-custom-element-registry';
+import { ${className} } from './src/${className}.js';
+
+if (customElements.get('${name}') === undefined) {
+  customElements.define('${name}', ${className});
+}
+
+export { ${className} };
+`;
+}
+
+function componentSource(name, className, keys) {
+  return `import { LitElement, html } from 'lit';
+import { ScopedElementsMixin } from '@open-wc/scoped-elements/lit-element.js';
+import { WidgetMixin as widgetMixin } from './mixins/WidgetMixin.js';
+import { AcademyTypeText } from './components/AcademyTypeText.js';
+import { AcademyButtonDefault } from './components/AcademyButtonDefault.js';
+import { componentStyles } from './${name}.styles.js';
+
+export class ${className} extends widgetMixin(ScopedElementsMixin(LitElement)) {
+  static get scopedElements() {
+    return {
+      ...super.scopedElements,
+      'academy-type-text': AcademyTypeText,
+      'academy-button-default': AcademyButtonDefault
+    };
+  }
+
+  static styles = componentStyles;
+
+  notifyContinue() {
+    this.emitEvent('continue', { component: ${JSON.stringify(name)} });
+  }
+
+  render() {
+    return html\`<article>
+      <academy-type-text .text=\${this.t(${JSON.stringify(keys.heading)})}></academy-type-text>
+      <slot></slot>
+      <academy-button-default .text=\${this.t(${JSON.stringify(keys.continue)})} @click=\${this.notifyContinue}></academy-button-default>
+    </article>\`;
+  }
+}
+`;
+}
+
+function stylesSource() {
+  return `import { css } from 'lit';
+
+export const componentStyles = css\`
+  :host { display: block; max-width: 32rem; color: #072146; font: 16px/1.5 system-ui, sans-serif; }
+  article { display: grid; gap: 1rem; border: 1px solid #d4edfc; border-radius: .5rem; padding: 1rem; background: white; }
+  academy-type-text { display: block; font-size: 1.5rem; font-weight: 600; }
+  academy-button-default { justify-self: start; }
+\`;
+`;
+}
+
+function rootIndexSource() {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="0; url=demo/">
+    <title></title>
+  </head>
+  <body></body>
+</html>
+`;
+}
+
+function demoIndexSource() {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title></title>
+  </head>
+  <body>
+    <main data-demo-root></main>
+    <script type="module" src="./demo.js"></script>
+  </body>
+</html>
+`;
+}
+
+function demoSource(name, keys) {
+  return `import '@webcomponents/scoped-custom-element-registry';
+import { installIntlMsg } from '../src/runtime/academy-intl-msg.js';
+
+const intlMsg = installIntlMsg({ forTesting: false });
+intlMsg.lang = 'en';
+document.documentElement.lang = 'en';
+intlMsg.localesHost = new URL('./locales/locales.json', import.meta.url).href;
+await intlMsg.loadUrlResourcesComplete;
+await import('../${name}.js');
+
+const root = document.querySelector('[data-demo-root]');
+
+function textElement(tagName, text) {
+  const element = document.createElement(tagName);
+  element.textContent = text;
+  return element;
+}
+
+async function setLanguage(language) {
+  intlMsg.lang = language;
+  document.documentElement.lang = language;
+  await intlMsg.loadUrlResourcesComplete;
+  renderDemo();
+}
+
+function renderDemo() {
+  const title = textElement('h1', intlMsg.t(${JSON.stringify(keys.demoTitle)}));
+  const controls = document.createElement('div');
+  const english = textElement('button', intlMsg.t(${JSON.stringify(keys.demoLanguageEn)}));
+  const spanish = textElement('button', intlMsg.t(${JSON.stringify(keys.demoLanguageEs)}));
+  const component = document.createElement('${name}');
+  const eventOutput = document.createElement('output');
+
+  english.type = 'button';
+  spanish.type = 'button';
+  eventOutput.dataset.event = '';
+  eventOutput.setAttribute('aria-live', 'polite');
+  eventOutput.textContent = intlMsg.t(${JSON.stringify(keys.demoEventEmpty)});
+  english.addEventListener('click', () => {
+    void setLanguage('en');
+  });
+  spanish.addEventListener('click', () => {
+    void setLanguage('es');
+  });
+  component.addEventListener('${name}-continue', event => {
+    eventOutput.textContent = intlMsg.t(${JSON.stringify(keys.demoEvent)}, { event: event.type });
+  });
+  controls.append(english, spanish);
+  root.replaceChildren(title, controls, component, eventOutput);
+  document.title = intlMsg.t(${JSON.stringify(keys.demoTitle)});
+}
+
+renderDemo();
+`;
+}
+
+function unitTestSource(name, className) {
+  return `import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import catalogs from './locales/locales.json';
+import { AcademyButtonDefault } from '../../src/components/AcademyButtonDefault.js';
+import { AcademyTypeText } from '../../src/components/AcademyTypeText.js';
+import { installIntlMsg } from '../../src/runtime/academy-intl-msg.js';
+import { ${className} } from '../../${name}.js';
+
+async function renderComponent() {
+  const component = document.createElement('${name}');
+  document.body.replaceChildren(component);
+  await component.updateComplete;
+  return component;
+}
+
+async function scopedChildren(component) {
+  const typeText = component.shadowRoot.querySelector('academy-type-text');
+  const button = component.shadowRoot.querySelector('academy-button-default');
+  await typeText.updateComplete;
+  await button.updateComplete;
+  return { typeText, button };
+}
+
+describe('${name}', () => {
+  beforeEach(async () => {
+    const intlMsg = installIntlMsg({ catalogs, language: 'en', forTesting: true });
+    await intlMsg.loadUrlResourcesComplete;
+  });
+
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it('renders English through locally scoped Academy elements', async () => {
+    const component = await renderComponent();
+    const { typeText, button } = await scopedChildren(component);
+
+    expect(component).toBeInstanceOf(${className});
+    expect(typeText).toBeInstanceOf(AcademyTypeText);
+    expect(button).toBeInstanceOf(AcademyButtonDefault);
+    expect(typeText.shadowRoot.textContent).toContain('${name.replace(/-/g, ' ')} ready');
+    expect(button.shadowRoot.querySelector('button').textContent).toBe('Continue');
+    expect(customElements.get('academy-type-text')).toBeUndefined();
+    expect(customElements.get('academy-button-default')).toBeUndefined();
+  });
+
+  it('renders Spanish after the installed IntlMsg language switch', async () => {
+    const component = await renderComponent();
+    const intlMsg = globalThis.IntlMsg;
+
+    intlMsg.lang = 'es';
+    await intlMsg.loadUrlResourcesComplete;
+    await component.updateComplete;
+    const { typeText, button } = await scopedChildren(component);
+
+    expect(typeText.shadowRoot.textContent).toContain('${name.replace(/-/g, ' ')} listo');
+    expect(button.shadowRoot.querySelector('button').textContent).toBe('Continuar');
+  });
+
+  it('emits a prefixed continuation event with default delivery options', async () => {
+    const component = await renderComponent();
+    const { button } = await scopedChildren(component);
+    const continued = new Promise(resolve => {
+      component.addEventListener('${name}-continue', resolve, { once: true });
+    });
+
+    button.shadowRoot.querySelector('button').click();
+    const event = await continued;
+
+    expect(event.type).toBe('${name}-continue');
+    expect(event.detail).toEqual({ component: '${name}' });
+    expect(event.bubbles).toBe(true);
+    expect(event.composed).toBe(true);
+    expect(event.cancelable).toBe(true);
+  });
+});
+`;
+}
+
+function accessibilityTestSource(name) {
+  return `import axe from 'axe-core';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import catalogs from './locales/locales.json';
+import { installIntlMsg } from '../../src/runtime/academy-intl-msg.js';
+import '../../${name}.js';
+
+describe('${name} accessibility', () => {
+  beforeEach(async () => {
+    const intlMsg = installIntlMsg({ catalogs, language: 'en', forTesting: true });
+    await intlMsg.loadUrlResourcesComplete;
+  });
+
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it('has no automatically detectable violations inside a landmark', async () => {
+    const component = document.createElement('${name}');
+    const main = document.createElement('main');
+    main.append(component);
+    document.body.replaceChildren(main);
+    await component.updateComplete;
+
+    const results = await axe.run(main);
+    expect(results.violations.map(violation => violation.id)).toEqual([]);
+  });
+});
+`;
+}
+
+function testSetupSource() {
+  return `import * as PropertySymbol from 'happy-dom/lib/PropertySymbol.js';
+
+const scopedRegistry = Symbol('academyScopedRegistry');
+const aliases = new WeakMap();
+let aliasNumber = 0;
+
+function aliasFor(constructor) {
+  let alias = aliases.get(constructor);
+  if (alias === undefined) {
+    alias = 'academy-test-scoped-' + aliasNumber;
+    aliasNumber += 1;
+    customElements.define(alias, constructor);
+    aliases.set(constructor, alias);
+  }
+  return alias;
+}
+
+function upgradeScopedChildren(root, fragment) {
+  const registry = root[scopedRegistry];
+  for (const [tagName, definition] of registry.entries()) {
+    for (const placeholder of fragment.querySelectorAll(tagName)) {
+      const element = document.createElement(definition.alias);
+      for (const attribute of placeholder.attributes) {
+        element.setAttribute(attribute.name, attribute.value);
+      }
+      element.append(...placeholder.childNodes);
+      element[PropertySymbol.tagName] = tagName.toUpperCase();
+      element[PropertySymbol.localName] = tagName;
+      placeholder.replaceWith(element);
+      element.connectedCallback();
+    }
+  }
+  return fragment;
+}
+
+class TestScopedRegistry {
+  constructor() {
+    this.definitions = new Map();
+  }
+
+  define(tagName, constructor) {
+    if (this.definitions.has(tagName)) {
+      throw new Error('Duplicate scoped element: ' + tagName);
+    }
+    this.definitions.set(tagName, { constructor, alias: aliasFor(constructor) });
+  }
+
+  get(tagName) {
+    return this.definitions.get(tagName)?.constructor;
+  }
+
+  entries() {
+    return this.definitions.entries();
+  }
+}
+
+globalThis.CustomElementRegistry = TestScopedRegistry;
+
+const attachShadow = HTMLElement.prototype.attachShadow;
+
+HTMLElement.prototype.attachShadow = function(options) {
+  const root = attachShadow.call(this, options);
+  const registry = options.registry ?? options.customElements;
+  if (registry instanceof TestScopedRegistry) {
+    root[scopedRegistry] = registry;
+    const importScope = root.importNode === undefined ? root.ownerDocument : root;
+    const importNode = importScope.importNode;
+    root.importNode = function(node, deep) {
+      return upgradeScopedChildren(root, importNode.call(importScope, node, deep));
+    };
+  }
+  return root;
+};
+`;
+}
+
+function viteConfigSource(className) {
+  return `import { fileURLToPath } from 'node:url';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  server: { host: '127.0.0.1' },
+  preview: { host: '127.0.0.1' },
+  build: { target: 'es2022' },
+  test: {
+    environment: 'happy-dom',
+    include: ['test/unit/**/*.test.js'],
+    setupFiles: ['test/unit/setup.js'],
+    alias: { '@webcomponents/scoped-custom-element-registry': fileURLToPath(new URL('./test/unit/scoped-registry-polyfill.js', import.meta.url)) },
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov'],
+      reportsDirectory: 'test/coverage',
+      include: ['src/${className}.js'],
+      thresholds: {
+        'src/${className}.js': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100
+        }
+      }
+    }
+  }
+});
+`;
+}
+
+function e2ePlan(name) {
+  return ScaffoldPlan.empty()
+    .addFile('playwright.config.js', `import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './e2e',
+  use: {
+    baseURL: 'http://127.0.0.1:4173',
+    launchOptions: process.env.ACADEMY_PLAYWRIGHT_EXECUTABLE_PATH
+      ? { executablePath: process.env.ACADEMY_PLAYWRIGHT_EXECUTABLE_PATH }
+      : {}
+  },
+  webServer: { command: 'npm run dev -- --host 127.0.0.1 --port 4173 --strictPort', url: 'http://127.0.0.1:4173', reuseExistingServer: false }
+});
+`)
+    .addFile('e2e/' + name + '.spec.js', `import AxeBuilder from '@axe-core/playwright';
+import { expect, test } from '@playwright/test';
+
+test('runs the generated localized component demo', async ({ page }) => {
+  await page.goto('/');
+  const component = page.locator('${name}');
+  await expect(component).toBeVisible();
+  await expect(component.getByText('${name.replace(/-/g, ' ')} ready')).toBeVisible();
+  await page.getByRole('button', { name: 'Spanish' }).click();
+  await expect(page.locator('html[lang="es"]')).toBeVisible();
+  await expect(component.getByText('${name.replace(/-/g, ' ')} listo')).toBeVisible();
+  await component.getByRole('button', { name: 'Continuar' }).click();
+  await expect(page.locator('[data-event]')).toHaveText('Evento: ${name}-continue');
+
+  const { violations } = await new AxeBuilder({ page }).analyze();
+  expect(violations).toEqual([]);
+});
+`);
+}
+
+export function createComponentPayload(input = {}) {
+  const { name, e2e } = assertComponentOptions(input);
+  const className = componentClassName(name);
+  const keys = messageKeys(name);
+  const locales = componentCatalogs(name, keys);
+  let plan = ScaffoldPlan.empty()
+    .addFile('index.html', rootIndexSource())
+    .addFile('index.js', `export { ${className} } from './${name}.js';\n`)
+    .addFile(`${name}.js`, entrypointSource(name, className))
+    .addFile(`src/${className}.js`, componentSource(name, className, keys))
+    .addFile(`src/${name}.styles.js`, stylesSource())
+    .addFile('demo/index.html', demoIndexSource())
+    .addFile('demo/demo.js', demoSource(name, keys))
+    .addFile(`demo/locales/locales.json`, stableJson(locales))
+    .addFile(`test/unit/${name}.test.js`, unitTestSource(name, className))
+    .addFile(`test/unit/${name}-accessibility.test.js`, accessibilityTestSource(name))
+    .addFile('test/unit/locales/locales.json', stableJson(locales))
+    .addFile('test/unit/scoped-registry-polyfill.js', '// Happy DOM uses the scoped-element bridge from setup.js instead of the browser polyfill.\nexport {};\n')
+    .addFile('test/unit/setup.js', testSetupSource())
+    .addFile('vite.config.js', viteConfigSource(className))
+    .addFile('locales/locales.json', stableJson(locales));
+  if (e2e) {
+    plan = plan.merge(e2ePlan(name));
+  }
+  return plan;
+}
