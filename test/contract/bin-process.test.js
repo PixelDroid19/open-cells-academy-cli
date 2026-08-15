@@ -68,13 +68,13 @@ test('break: --language es stops localizing executable help', () => {
   assert.equal(result.stderr, '');
 });
 
-test('break: invoking the binary without a command stops returning a localized actionable failure', () => {
+test('contract: invoking the binary without a command in non-interactive environment renders static help and exits cleanly', () => {
   const result = run([], { CELLS_ACADEMY_LANGUAGE: 'es' });
 
-  assert.equal(result.status, 1);
-  assert.equal(result.stdout, '');
-  assert.match(result.stderr, /Se requiere un comando/);
-  assert.match(result.stderr, /cells --help/);
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /Uso: cells <comando> \[opciones\]/);
+  assert.match(result.stdout, /Comandos:/);
+  assert.equal(result.stderr, '');
 });
 
 test('break: invalid command process failures stop returning exit code 1 and a recovery hint', () => {

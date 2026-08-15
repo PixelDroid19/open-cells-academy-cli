@@ -1,4 +1,5 @@
 import { translate } from '../i18n/translator.js';
+import { findCommand } from '../domain/tui/command-catalog.js';
 
 function optionUsage(option, language) {
   const aliases = option.aliases.join(', ');
@@ -60,6 +61,14 @@ function commandHelp(command, language) {
   } else {
     for (const option of command.options) {
       lines.push(optionUsage(option, language));
+    }
+  }
+
+  const catalogItem = findCommand(command.name);
+  if (catalogItem?.aliases && catalogItem.aliases.length > 0) {
+    lines.push('', translate(language, 'aliases_heading'));
+    for (const alias of catalogItem.aliases) {
+      lines.push(`  ${alias}`);
     }
   }
 

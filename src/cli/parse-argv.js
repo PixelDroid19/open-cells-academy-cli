@@ -7,6 +7,7 @@ const ROOT_VERSION_OPTIONS = new Set(['--version', '-v']);
 const LANGUAGE_OPTIONS = new Set(['--language', '-l']);
 const COMMAND_ALIASES = new Map([
   ['lit-component:serve', 'component:dev'],
+  ['lit-components:serve', 'component:dev'],
   ['lit-component:test', 'component:test'],
   ['lit-component:documentation', 'component:documentation'],
   ['lit-component:locales', 'component:locales'],
@@ -377,12 +378,86 @@ function parseHelpCommand(argv, commandIndex, registry, language) {
   return helpResult(resolvedLanguage, command);
 }
 
+function isInteractiveTty(context) {
+  const env = context.env ?? process.env;
+  if (env.CI && env.CI !== 'false' && env.CI !== '0') {
+    return false;
+  }
+  if (env.TERM === 'dumb') {
+    return false;
+  }
+  if (typeof context.isTTY === 'boolean') {
+    return context.isTTY;
+  }
+  const stdinTty = context.stdin?.isTTY ?? (typeof process.stdin?.isTTY === 'boolean' ? process.stdin.isTTY : undefined);
+  const stdoutTty = context.stdout?.isTTY ?? (typeof process.stdout?.isTTY === 'boolean' ? process.stdout.isTTY : undefined);
+  if (stdinTty !== undefined && stdoutTty !== undefined) {
+    return Boolean(stdinTty && stdoutTty);
+  }
+  return false;
+}
+
+function parseTuiAction(argv, startIndex, language) {
+  let resolvedLanguage = language;
+  let animation = true;
+  for (let index = startIndex; index < argv.length; index += 1) {
+    const token = argv[index];
+    const globalLanguage = consumeGlobalLanguage(argv, index, resolvedLanguage);
+    if (globalLanguage) {
+      if (globalLanguage.error) {
+        return globalLanguage.error;
+      }
+      resolvedLanguage = globalLanguage.language;
+      index = globalLanguage.nextIndex - 1;
+      continue;
+    }
+    const { alias } = splitOption(String(token));
+    if (alias === '--no-animation') {
+      animation = false;
+      continue;
+    }
+    if (alias === '--animation') {
+      animation = true;
+      continue;
+    }
+    if (ROOT_HELP_OPTIONS.has(alias)) {
+      return helpResult(resolvedLanguage);
+    }
+    return error(resolvedLanguage, 'UNKNOWN_OPTION', 'unknown_option', {
+      option: alias,
+      command: 'tui'
+    });
+  }
+  return freezeResult({
+    ok: true,
+    action: 'tui',
+    options: Object.freeze({ animation }),
+    language: resolvedLanguage
+  });
+}
+
+function tuiFallbackHelp(argv, startIndex, language) {
+  let resolvedLanguage = language;
+  for (let index = startIndex; index < argv.length; index += 1) {
+    const globalLanguage = consumeGlobalLanguage(argv, index, resolvedLanguage);
+    if (globalLanguage === undefined) {
+      continue;
+    }
+    if (globalLanguage.error) {
+      return globalLanguage.error;
+    }
+    resolvedLanguage = globalLanguage.language;
+    index = globalLanguage.nextIndex - 1;
+  }
+  return helpResult(resolvedLanguage);
+}
+
 /**
  * Parses the raw CLI grammar without executing a command.
  *
  * @param {string[]} argv
  * @param {ReadonlyMap<string, Readonly<object>>} registry
- * @param {{env?: Record<string, string | undefined>, locale?: string}} [context]
+ * @param {{env?: Record<string, string | undefined>, locale?: string, isTTY?: boolean, stdin?: {isTTY?: boolean}, stdout?: {isTTY?: boolean}}} [context]
  * @returns {Readonly<object>}
  */
 export function parseArgv(argv, registry, context = {}) {
@@ -409,6 +484,13 @@ export function parseArgv(argv, registry, context = {}) {
       return parseRootAction(input, index + 1, 'version', language);
     }
 
+    if (token === 'tui') {
+      if (!isInteractiveTty(context)) {
+        return tuiFallbackHelp(input, index + 1, language);
+      }
+      return parseTuiAction(input, index + 1, language);
+    }
+
     if (typeof token === 'string' && token.startsWith('-')) {
       return error(language, 'UNKNOWN_OPTION', 'unknown_root_option', { option: splitOption(token).alias });
     }
@@ -425,5 +507,14 @@ export function parseArgv(argv, registry, context = {}) {
     return parseCommand(input, command, index + 1, language);
   }
 
-  return error(language, 'MISSING_COMMAND', 'missing_command', {});
+  if (isInteractiveTty(context)) {
+    return freezeResult({
+      ok: true,
+      action: 'tui',
+      options: Object.freeze({ animation: true }),
+      language
+    });
+  }
+
+  return helpResult(language);
 }

@@ -190,6 +190,7 @@ const COMMAND_CONTRACTS = [
       { name: 'port', aliases: ['-p', '--port'], type: 'number', defaultValue: 8001, required: false },
       { name: 'open', aliases: ['-o', '--open'], type: 'boolean', defaultValue: true, required: false },
       { name: 'host', aliases: ['--host'], type: 'string', defaultValue: '127.0.0.1', required: false },
+      { name: 'strictPort', aliases: ['--strictPort'], type: 'boolean', defaultValue: false, required: false },
       {
         name: 'sassLogLevel',
         aliases: ['--sassLogLevel'],

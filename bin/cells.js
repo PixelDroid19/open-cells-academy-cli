@@ -50,6 +50,26 @@ export function createCli({ dispatch, registry = createCommandRegistry() } = {})
         return { stdout: renderHelp(registry, parsed.language, parsed.command), stderr: '', exitCode: 0 };
       }
 
+      if (parsed.action === 'tui') {
+        try {
+          const outcome = await dispatchCommand(parsed);
+          if (
+            outcome !== null &&
+            typeof outcome === 'object' &&
+            outcome.ok === true &&
+            (outcome.data === undefined || outcome.data?.status === 'tui_closed' || outcome.data?.exitCode !== undefined)
+          ) {
+            return { stdout: '', stderr: '', exitCode: outcome.data?.exitCode ?? 0 };
+          }
+          return renderOutcome(outcome, parsed.language);
+        } catch (cause) {
+          return renderOutcome(
+            fail('INTERNAL_ERROR', 'internal_error', {}, 'internal_error_remediation', cause),
+            parsed.language
+          );
+        }
+      }
+
       try {
         const outcome = await dispatchCommand(parsed);
         return renderOutcome(outcome, parsed.language);
@@ -68,15 +88,22 @@ async function main() {
   const { createRequire } = await import('node:module');
   const { fileURLToPath } = await import('node:url');
   const path = await import('node:path');
-  const candidateRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+  const cliEntrypoint = fileURLToPath(import.meta.url);
+  const candidateRoot = path.dirname(path.dirname(cliEntrypoint));
   const { dispatch } = resolveDispatch({
     cwd: process.cwd(),
     env: process.env,
     candidateRoot,
+    cliEntrypoint,
     createRequireFrom: createRequire
   });
   const cli = createCli({ dispatch });
-  const result = await cli.run(process.argv.slice(2), { env: process.env });
+  const result = await cli.run(process.argv.slice(2), {
+    env: process.env,
+    isTTY: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+    stdin: process.stdin,
+    stdout: process.stdout
+  });
   if (result.stdout) {
     process.stdout.write(result.stdout);
   }

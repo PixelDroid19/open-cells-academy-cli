@@ -259,7 +259,7 @@ function typedOutcome(cause, success) {
  * missing tool produces a typed `TOOL_MISSING` outcome rather than a
  * NOT_IMPLEMENTED placeholder.
  */
-export function resolveDispatch({ api, cwd, env = {}, candidateRoot, createRequireFrom = createRequireDefault } = {}) {
+export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoint, createRequireFrom = createRequireDefault } = {}) {
   const filesystem = new NodeFilesystem();
   const processRunner = api?.processRunner ?? new NodeProcessRunner();
   const workspaceLock = api?.workspaceLock ?? new FileWorkspaceLock({ filesystem, processRunner });
@@ -558,7 +558,8 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, createRequi
         options
       }));
     }
-    return ok({ url: await handle?.ready?.then(ready => ready.url).catch(() => undefined) });
+    const url = await handle?.ready?.then(ready => ready.url).catch(() => undefined);
+    return ok({ url }, url === undefined ? [] : [{ key: 'server_ready', params: { url } }]);
   }
 
   async function handlePreview(tools, parsed, session) {
@@ -574,7 +575,8 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, createRequi
         strictPort: boolOption(parsed, 'strictPort')
       })
     }));
-    return ok({ url: await handle?.ready?.then(ready => ready.url).catch(() => undefined) });
+    const url = await handle?.ready?.then(ready => ready.url).catch(() => undefined);
+    return ok({ url }, url === undefined ? [] : [{ key: 'server_ready', params: { url } }]);
   }
 
   async function handleBuildApp(tools, parsed, session) {
@@ -679,6 +681,21 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, createRequi
   }
 
   async function dispatch(parsed) {
+    if (isRecord(parsed) && parsed.action === 'tui') {
+      const { startTui } = await import('../application/tui/start-tui.js');
+      return startTui({
+        cwd,
+        env,
+        stdin: api?.stdin ?? process.stdin,
+        stdout: api?.stdout ?? process.stdout,
+        language: parsed.language,
+        animation: parsed.options?.animation !== false,
+        processRunner,
+        cliEntrypoint,
+        urlOpener: api?.urlOpener
+      });
+    }
+
     if (!isRecord(parsed) || parsed.action !== 'command' || !isRecord(parsed.command)) {
       return fail('INVALID_INPUT', 'invalidInput');
     }

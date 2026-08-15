@@ -120,6 +120,7 @@ export function createCommandRegistry() {
         number('port', ['-p', '--port'], { defaultValue: 8001, required: false }),
         boolean('open', ['-o', '--open'], { defaultValue: true, required: false }),
         string('host', ['--host'], { defaultValue: '127.0.0.1', required: false }),
+        boolean('strictPort', ['--strictPort'], { defaultValue: false, required: false }),
         sassLogLevel()
       ])
     ],
