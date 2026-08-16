@@ -494,11 +494,11 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
       : async () => {
         const { loadCellsConfig } = await import('../adapters/vite/config-loader.js');
         const config = await loadCellsConfig(session, optionOf(parsed, 'config'));
-        const localeSources = await discoverAppLocaleSources(session.root, config.locales);
+        const localeSources = await discoverAppLocaleSources(session.root, config.locales, config.appModules);
         return generateAppLocales(Object.freeze({
           session,
           filesystem,
-          request: Object.freeze({ config: config.locales, ...localeSources, signal: undefined }),
+          request: Object.freeze({ config: config.locales, ...localeSources, replaceOutput: true, signal: undefined }),
           publisher: appLocalePublisher
         }));
       };
@@ -534,11 +534,11 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
     } else {
       const { loadCellsConfig } = await import('../adapters/vite/config-loader.js');
       const config = await loadCellsConfig(session, optionOf(parsed, 'config'));
-      const localeSources = await discoverAppLocaleSources(session.root, config.locales);
+      const localeSources = await discoverAppLocaleSources(session.root, config.locales, config.appModules);
       result = await generateAppLocales(Object.freeze({
         session,
         filesystem,
-        request: Object.freeze({ config: config.locales, ...localeSources, signal: undefined }),
+        request: Object.freeze({ config: config.locales, ...localeSources, replaceOutput: true, signal: undefined }),
         publisher: appLocalePublisher
       }));
     }
@@ -595,7 +595,7 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
     const context = baseContext(session);
     const { loadCellsConfig } = await import('../adapters/vite/config-loader.js');
     const config = await loadCellsConfig(session, optionOf(parsed, 'config'));
-    const localeSources = await discoverAppLocaleSources(session.root, config.locales);
+    const localeSources = await discoverAppLocaleSources(session.root, config.locales, config.appModules);
     const sw = config.serviceWorker ?? config.enable_sw;
     const swConfig = (() => {
       if (sw === undefined || sw === false || sw === null) return undefined;

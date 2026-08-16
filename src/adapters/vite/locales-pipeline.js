@@ -98,12 +98,15 @@ function normalizeAppConfig(value) {
   if (!isRecord(value)) {
     throw typedError('LOCALES_CONFIG_INVALID', { field: 'config' });
   }
-  const allowed = new Set(['enabledI18n', 'intlFileName', 'intlFileVersion', 'intlInputFileNames', 'languages', 'useBundles', 'pagesPath', 'initialPages', 'initialBundle']);
+  const allowed = new Set(['enabledI18n', 'forTesting', 'intlFileName', 'intlFileVersion', 'intlInputFileNames', 'languages', 'useBundles', 'pagesPath', 'initialPages', 'initialBundle']);
   if (Object.keys(value).some(field => !allowed.has(field))) {
     throw typedError('LOCALES_CONFIG_INVALID', { field: 'config' });
   }
   if (value.enabledI18n !== undefined && typeof value.enabledI18n !== 'boolean') {
     throw typedError('LOCALES_CONFIG_INVALID', { field: 'enabledI18n' });
+  }
+  if (value.forTesting !== undefined && typeof value.forTesting !== 'boolean') {
+    throw typedError('LOCALES_CONFIG_INVALID', { field: 'forTesting' });
   }
   if (value.useBundles !== undefined && typeof value.useBundles !== 'boolean') {
     throw typedError('LOCALES_CONFIG_INVALID', { field: 'useBundles' });
@@ -583,7 +586,10 @@ export async function planAppLocales({ session, filesystem, request }) {
   if (request.config === undefined) {
     return ScaffoldPlan.empty();
   }
-  const allowed = new Set(['config', 'componentLocaleFiles', 'appLocaleFiles', 'pageEntries', 'pageModules', 'signal']);
+  const allowed = new Set(['config', 'componentLocaleFiles', 'appLocaleFiles', 'pageEntries', 'pageModules', 'replaceOutput', 'signal']);
+  if (request.replaceOutput !== undefined && typeof request.replaceOutput !== 'boolean') {
+    throw typedError('LOCALES_REQUEST_INVALID');
+  }
   if (Object.keys(request).some(field => !allowed.has(field))) {
     throw typedError('LOCALES_REQUEST_INVALID');
   }

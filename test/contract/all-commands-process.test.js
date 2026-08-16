@@ -457,6 +457,23 @@ test('contract: app:locales supports established locales-app sources and intlInp
   });
 });
 
+test('contract: app:locales atomically removes stale catalogs when the selected profile disables i18n', async t => {
+  const root = await workspace(t);
+  await mkdir(path.join(root, 'app'), { recursive: true });
+  await writeFile(path.join(root, 'app', 'index.html'), '<main></main>\n');
+  await writeFile(path.join(root, 'app', 'config', 'disabled.js'), 'export default { locales: { enabledI18n: false } };\n');
+  await mkdir(path.join(root, 'dist', 'locales'), { recursive: true });
+  await writeFile(path.join(root, 'dist', 'locales', 'stale.json'), '{"stale":true}\n');
+  const api = createFakeToolApi();
+  const { dispatch } = resolveDispatch({ api, cwd: root });
+  const cli = registryFor(dispatch);
+
+  const result = await cli.run(['app:locales', '--config', 'disabled.js'], { env: {} });
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.deepEqual(await readdir(path.join(root, 'dist', 'locales')), []);
+});
+
 test('contract: dev/build/preview/component:dev/component:build:demo dispatch to the toolchains (tools present)', async t => {
   const root = await workspace(t);
   await mkdir(path.join(root, 'app'), { recursive: true });

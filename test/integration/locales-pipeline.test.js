@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { NodeFilesystem } from '../../src/adapters/node/node-filesystem.js';
+import { discoverAppLocaleSources } from '../../src/adapters/vite/locale-discovery.js';
 import { generateAppLocales } from '../../src/application/app/generate-locales.js';
 import { generateComponentLocales } from '../../src/application/component/generate-locales.js';
 import { ScaffoldPlan } from '../../src/domain/scaffold-plan.js';
@@ -170,12 +171,34 @@ test('break: a per-language locale configuration does not add an implicit combin
 
   const plan = await generateAppLocales(
     appContext(session, filesystem, {
-      config: { enabledI18n: true, languages: ['en'] },
+      config: { enabledI18n: true, forTesting: true, languages: ['en'] },
       componentLocaleFiles: ['components/button/locales/en.json']
     })
   );
 
   assert.deepEqual(Object.keys(filesIn(plan)), ['dist/locales/en.json']);
+});
+
+test('break: established locale discovery includes configured Cells scopes, excludes unrelated packages, and resolves pnpm links safely', async t => {
+  const { root } = await workspace(t);
+  await writeWorkspaceFile(root, 'node_modules/axe-core/locales/en.json', '{"leaked":"third-party"}\n');
+  await writeWorkspaceFile(root, 'node_modules/@cells/direct/locales/en.json', '{"direct":"Cells"}\n');
+  const pnpmPackage = 'node_modules/.pnpm/@cells+linked@1.0.0/node_modules/@cells/linked';
+  await writeWorkspaceFile(root, `${pnpmPackage}/locales/en.json`, '{"linked":"Cells"}\n');
+  await mkdir(path.join(root, 'node_modules', '@cells'), { recursive: true });
+  await symlink(
+    path.relative(path.join(root, 'node_modules', '@cells'), path.join(root, pnpmPackage)),
+    path.join(root, 'node_modules', '@cells', 'linked'),
+    'dir'
+  );
+
+  const sources = await discoverAppLocaleSources(root, { intlInputFileNames: ['locales'] }, ['@cells']);
+
+  assert.deepEqual(sources.componentLocaleFiles, [
+    'node_modules/.pnpm/@cells+linked@1.0.0/node_modules/@cells/linked/locales/en.json',
+    'node_modules/@cells/direct/locales/en.json'
+  ]);
+  assert.equal(sources.componentLocaleFiles.some(file => file.includes('axe-core')), false);
 });
 
 test('break: app locale variants overlay bases and app roots override component conflicts in stable combined output', async t => {
