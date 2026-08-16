@@ -391,8 +391,8 @@ async function evaluateEsmConfig(file, sourcePath) {
       else finish(reject, invalidConfig(sourcePath));
     });
     worker.once('error', () => finish(reject, invalidConfig(sourcePath)));
-    worker.once('exit', code => {
-      if (!settled && code !== 0) finish(reject, invalidConfig(sourcePath));
+    worker.once('exit', () => {
+      if (!settled) finish(reject, invalidConfig(sourcePath));
     });
   });
 }

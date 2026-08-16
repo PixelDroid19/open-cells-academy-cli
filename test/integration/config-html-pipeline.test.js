@@ -145,6 +145,16 @@ test('integration: ESM config reload evaluates a fresh contained dependency grap
   ]);
 });
 
+test('integration: an ESM config worker that exits cleanly without a result fails instead of hanging', async t => {
+  const { root, session } = await fixture(t);
+  await writeConfig(root, 'clean-exit.js', 'process.exit(0); export default { server: { port: 8121 } };\n');
+
+  await Promise.race([
+    assertConfigCode(loadCellsConfig(session, 'clean-exit.js'), 'app/config/clean-exit.js'),
+    new Promise((resolve, reject) => setTimeout(() => reject(new Error('config load hung after worker exit')), 500))
+  ]);
+});
+
 test('break: nested config directory symlinks and traversal remain outside the trusted boundary', async t => {
   const { root, session } = await fixture(t);
   await mkdir(path.join(root, 'app', 'config', 'real-market'));
