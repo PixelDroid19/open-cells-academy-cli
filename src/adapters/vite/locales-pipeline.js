@@ -98,7 +98,7 @@ function normalizeAppConfig(value) {
   if (!isRecord(value)) {
     throw typedError('LOCALES_CONFIG_INVALID', { field: 'config' });
   }
-  const allowed = new Set(['enabledI18n', 'forTesting', 'intlFileName', 'intlFileVersion', 'intlInputFileNames', 'languages', 'useBundles', 'pagesPath', 'initialPages', 'initialBundle']);
+  const allowed = new Set(['enabledI18n', 'forTesting', 'intlFileName', 'intlFileVersion', 'intlInputFileNames', 'languages', 'useBundles', 'pagesPath', 'initialPages', 'initialBundle', 'pageEntries', 'pageModules']);
   if (Object.keys(value).some(field => !allowed.has(field))) {
     throw typedError('LOCALES_CONFIG_INVALID', { field: 'config' });
   }
@@ -139,7 +139,9 @@ function normalizeAppConfig(value) {
     languages: normalizedLanguages(value.languages),
     useBundles,
     pagesPath: normalizedRelativePath(value.pagesPath ?? 'pages', 'pagesPath'),
-    initialPages: Object.freeze((value.initialPages ?? value.initialBundle ?? []).map(page => normalizedIdentifier(page, 'initialPages')).sort(compareText))
+    initialPages: Object.freeze((value.initialPages ?? value.initialBundle ?? []).map(page => normalizedIdentifier(page, 'initialPages')).sort(compareText)),
+    pageEntries: value.pageEntries,
+    pageModules: value.pageModules
   };
   if (useBundles) {
     config.intlFileName = config.intlFileName ?? 'locales';
@@ -623,7 +625,7 @@ export async function planAppLocales({ session, filesystem, request }) {
   const componentPaths = normalizedPathList(request.componentLocaleFiles, 'componentLocaleFiles');
   const appPaths = normalizedPathList(request.appLocaleFiles, 'appLocaleFiles');
   const bundle = config.useBundles
-    ? Object.freeze({ entries: normalizedPageEntries(request.pageEntries), modules: normalizedPageModules(request.pageModules) })
+    ? Object.freeze({ entries: normalizedPageEntries(request.pageEntries ?? config.pageEntries), modules: normalizedPageModules(request.pageModules ?? config.pageModules) })
     : undefined;
   const appSources = await readRequiredSources(session, filesystem, appPaths);
   if (config.useBundles) {

@@ -140,13 +140,14 @@ export async function discoverAppLocaleSources(sessionRoot, config = undefined, 
   if (typeof sessionRoot !== 'string' || !path.isAbsolute(sessionRoot)) throw typedError('LOCALES_CONTEXT_INVALID');
   const configured = config?.intlInputFileNames;
   const inputNames = new Set(Array.isArray(configured) ? configured : ['locales']);
-  const [appLocaleFiles, componentFiles, packageFiles] = await Promise.all([
-    discoverUnder(sessionRoot, 'app', inputNames),
+  const [appRootFiles, appLegacyFiles, componentFiles, packageFiles] = await Promise.all([
+    discoverUnder(sessionRoot, 'app/locales-app', inputNames),
+    discoverUnder(sessionRoot, 'app/locales', inputNames),
     discoverUnder(sessionRoot, 'components', inputNames),
     discoverPackages(sessionRoot, inputNames, configuredModules)
   ]);
   return Object.freeze({
-    appLocaleFiles,
+    appLocaleFiles: Object.freeze([...new Set([...appRootFiles, ...appLegacyFiles])].sort()),
     componentLocaleFiles: Object.freeze([...new Set([...componentFiles, ...packageFiles])].sort())
   });
 }

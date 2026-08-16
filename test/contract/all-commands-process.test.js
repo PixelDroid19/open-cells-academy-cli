@@ -487,6 +487,45 @@ test('contract: app:locales atomically removes stale catalogs when the selected 
   assert.deepEqual(await readdir(path.join(root, 'dist', 'locales')), []);
 });
 
+test('contract: app:locales publishes configured page bundles through the CLI', async t => {
+  const root = await workspace(t);
+  await mkdir(path.join(root, 'app'), { recursive: true });
+  await writeFile(path.join(root, 'app', 'index.html'), '<main></main>\n');
+  await writeFile(
+    path.join(root, 'app', 'config', 'bundle.js'),
+    `export default { locales: {
+      enabledI18n: true,
+      useBundles: true,
+      languages: ['en'],
+      intlFileName: 'locales',
+      initialBundle: ['home'],
+      pageEntries: { home: 'home-page', about: 'about-page' },
+      pageModules: {
+        'home-page': { imports: [], localeFiles: ['app/pages/home-page/locales/locales.json'] },
+        'about-page': { imports: [], localeFiles: ['app/pages/about-page/locales/locales.json'] }
+      }
+    } };\n`
+  );
+  await mkdir(path.join(root, 'app', 'locales-app'), { recursive: true });
+  await writeFile(path.join(root, 'app', 'locales-app', 'locales.json'), '{"en":{"application":"root"}}\n');
+  await mkdir(path.join(root, 'app', 'pages', 'home-page', 'locales'), { recursive: true });
+  await writeFile(path.join(root, 'app', 'pages', 'home-page', 'locales', 'locales.json'), '{"en":{"home":"Home"}}\n');
+  await mkdir(path.join(root, 'app', 'pages', 'about-page', 'locales'), { recursive: true });
+  await writeFile(path.join(root, 'app', 'pages', 'about-page', 'locales', 'locales.json'), '{"en":{"about":"About"}}\n');
+  const api = createFakeToolApi();
+  const { dispatch } = resolveDispatch({ api, cwd: root });
+
+  const result = await registryFor(dispatch).run(['app:locales', '--config', 'bundle.js'], { env: {} });
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.deepEqual(JSON.parse(await readFile(path.join(root, 'dist', 'locales', 'locales.json'), 'utf8')), {
+    en: { application: 'root', home: 'Home' }
+  });
+  assert.deepEqual(JSON.parse(await readFile(path.join(root, 'dist', 'pages', 'about-page', 'locales', 'locales.json'), 'utf8')), {
+    en: { about: 'About' }
+  });
+});
+
 test('contract: dev/build/preview/component:dev/component:build:demo dispatch to the toolchains (tools present)', async t => {
   const root = await workspace(t);
   await mkdir(path.join(root, 'app'), { recursive: true });

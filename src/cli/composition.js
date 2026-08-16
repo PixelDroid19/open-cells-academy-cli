@@ -403,8 +403,13 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
       let localePlan = ScaffoldPlan.empty();
       const testingPlans = new Map();
       for (const file of ScaffoldPlan.snapshot(plan).files) {
-        if (file.path.startsWith('dist/locales/')) {
-          localePlan = localePlan.addFile(file.path.slice('dist/locales/'.length), file.content, file.mode === undefined ? undefined : { mode: file.mode });
+        if (file.path.startsWith('dist/')) {
+          const match = file.path.match(/^(dist(?:\/.+)?\/locales)\/(.+)$/);
+          if (match === null) throw typedError('LOCALES_REQUEST_INVALID');
+          const current = match[1] === 'dist/locales' ? localePlan : testingPlans.get(match[1]) ?? ScaffoldPlan.empty();
+          const next = current.addFile(match[2], file.content, file.mode === undefined ? undefined : { mode: file.mode });
+          if (match[1] === 'dist/locales') localePlan = next;
+          else testingPlans.set(match[1], next);
           continue;
         }
         const match = file.path.match(/^(test\/unit\/.+\/locales)\/(.+)$/);
