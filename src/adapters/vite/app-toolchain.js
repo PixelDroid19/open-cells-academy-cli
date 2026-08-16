@@ -373,6 +373,42 @@ async function copyIfPresent(source, target) {
   throw typedError('APP_BUILD_SOURCE_INVALID');
 }
 
+function localScriptPaths(html) {
+  const paths = new Set();
+  const base = new URL('https://open-cells.local/');
+  for (const match of html.matchAll(/<script\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1[^>]*>/giu)) {
+    let source;
+    try {
+      source = new URL(match[2], base);
+    } catch {
+      throw typedError('APP_BUILD_SOURCE_INVALID');
+    }
+    if (source.origin !== base.origin) continue;
+    let decoded;
+    try {
+      decoded = decodeURIComponent(source.pathname).replace(/^\/+/, '');
+    } catch {
+      throw typedError('APP_BUILD_SOURCE_INVALID');
+    }
+    if (decoded !== '') paths.add(normalizeRelativePath(decoded).join('/'));
+  }
+  return [...paths].sort();
+}
+
+async function copyReferencedStaticScripts(appRoot, stage) {
+  const html = await readFile(path.join(stage, 'index.html'), 'utf8');
+  for (const relative of localScriptPaths(html)) {
+    const target = workspacePath(stage, relative);
+    if (await status(target) !== undefined) continue;
+    const source = workspacePath(appRoot, relative);
+    const sourceStatus = await status(source);
+    if (sourceStatus === undefined || !sourceStatus.isFile() || sourceStatus.isSymbolicLink()) {
+      throw typedError('APP_BUILD_SOURCE_INVALID');
+    }
+    await copyIfPresent(source, target);
+  }
+}
+
 async function writeLocalePlan(stage, plan) {
   for (const file of ScaffoldPlan.snapshot(plan).files) {
     const relative = file.path.replace(/^dist\//, '');
@@ -564,6 +600,10 @@ export class AppToolchain {
       for (const name of ['resources', 'vendor', 'manifest.json']) {
         await verifyAppTemplate(appSource);
         await copyIfPresent(path.join(appSource.appRoot, name), path.join(stage, name));
+      }
+      if (appSource.markerPath === undefined) {
+        await verifyAppTemplate(appSource);
+        await copyReferencedStaticScripts(appSource.appRoot, stage);
       }
       if (request.serviceWorker?.mode === 'injectManifest' && typeof request.serviceWorker.options?.swSrc === 'string') {
         const source = workspacePath(request.session.root, request.serviceWorker.options.swSrc);

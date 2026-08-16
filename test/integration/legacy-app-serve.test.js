@@ -23,8 +23,9 @@ async function fixture(t) {
   t.after(() => rm(root, { recursive: true, force: true }));
   await write(root, 'package.json', '{"name":"legacy-serve-fixture","private":true,"type":"module"}\n');
   await write(root, 'app/index.html', '<main>stale</main>\n');
-  await write(root, 'app/tpls/index.tpl', '<!doctype html><html lang="##lang##"><body data-label="##label##"><script type="module" src="/scripts/app-bootstrap.js"></script></body></html>\n');
+  await write(root, 'app/tpls/index.tpl', '<!doctype html><html lang="##lang##"><body data-label="##label##"><script src="/scripts/vendor/runtime.js"></script><script type="module" src="/scripts/app-bootstrap.js"></script></body></html>\n');
   await write(root, 'app/scripts/app-bootstrap.js', '(function () { window.AppConfig = {}; window.__runtimeEnvironment = window.AppConfig.environment; }());\n');
+  await write(root, 'app/scripts/vendor/runtime.js', 'window.__legacyVendorLoaded = true;\n');
   await write(root, 'app/config/market/dev.js', 'export default { lang: "es", label: "DEV", environment: "de" };\n');
   await write(root, 'app/config/market/qa.js', 'export default { lang: "es", label: "QA", environment: "qa" };\n');
   const session = await WorkspaceSession.open(root, new NodeFilesystem());
@@ -103,6 +104,8 @@ test('integration: real Vite build consumes the rendered legacy HTML before emit
 
   const html = await readFile(path.join(result.destination, 'index.html'), 'utf8');
   assert.match(html, /(?:src|href)="\.\/assets\//);
+  assert.match(html, /scripts\/vendor\/runtime\.js/);
+  assert.equal(await readFile(path.join(result.destination, 'scripts/vendor/runtime.js'), 'utf8'), 'window.__legacyVendorLoaded = true;\n');
   assert.doesNotMatch(html, /scripts\/app-bootstrap\.js/);
   assert.doesNotMatch(html, /##[A-Za-z0-9_.-]+##/);
 });
