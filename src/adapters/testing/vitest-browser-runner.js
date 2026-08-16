@@ -1,8 +1,5 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
-
 import { typedError } from '../../domain/workspace-session.js';
-import { captureProjectTestFiles } from './test-files.js';
+import { captureProjectTestFiles, prepareTestArtifacts } from './test-files.js';
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -66,11 +63,7 @@ export class VitestBrowserRunner {
     if (request.updateSnapshots === true) args.push('--update');
     if (request.coverage === true) args.push('--coverage');
     const cwd = request.session.root;
-    try {
-      await mkdir(path.join(cwd, 'test', 'coverage'), { recursive: true });
-    } catch {
-      throw typedError('TEST_ARTIFACT_FAILED');
-    }
+    const artifacts = await prepareTestArtifacts(cwd, capturedTests);
     try {
       const result = await this.#process.runProcess(Object.freeze({
         file: this.#vitestExecutable,
@@ -79,7 +72,7 @@ export class VitestBrowserRunner {
         env: request.env ?? Object.freeze({}),
         signal: request.signal,
         timeoutMs: request.timeoutMs,
-        beforeSpawn: capturedTests.verify
+        beforeSpawn: artifacts.verify
       }));
       if (!isRecord(result)) throw typedError('TEST_TOOL_FAILED');
       return outcome(result, request);

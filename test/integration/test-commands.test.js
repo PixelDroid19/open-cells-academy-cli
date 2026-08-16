@@ -211,13 +211,14 @@ test('red: WTR preserves a caller-owned config and removes its private temporary
 test('red: test project prefers the project launcher and reports a missing launcher as a typed failure', async t => {
   const { root, session } = await workspace(t);
   await writeWorkspaceFile(root, 'test/a.test.js', 'it("passes", () => {});\n');
-  await writeWorkspaceFile(root, path.join('node_modules', '@web', 'test-runner-playwright', 'package.json'), '{"name":"@web/test-runner-playwright","version":"0.0.0"}\n');
+  await writeWorkspaceFile(root, path.join('node_modules', '@web', 'test-runner-playwright', 'package.json'), '{"name":"@web/test-runner-playwright","version":"0.0.0","type":"module","main":"index.mjs"}\n');
+  await writeWorkspaceFile(root, path.join('node_modules', '@web', 'test-runner-playwright', 'index.mjs'), 'export function playwrightLauncher() {}\n');
   const projectFake = createFakeTestToolchain();
   const withProjectLauncher = new WtrRunner(projectFake, 'web-test-runner');
   const projectOutcome = await testProject(testContext(session, withProjectLauncher, { wtr: true }));
   assert.equal(projectOutcome.ok, true);
   const config = projectFake.wtrConfigSource;
-  assert.match(config, /from\s+'@web\/test-runner-playwright'/);
+  assert.match(config, /node_modules\/@web\/test-runner-playwright\/index\.mjs/);
 
   const withoutLauncher = new WtrRunner(createFakeTestToolchain(), 'web-test-runner');
   await rm(path.join(root, 'node_modules'), { recursive: true, force: true });

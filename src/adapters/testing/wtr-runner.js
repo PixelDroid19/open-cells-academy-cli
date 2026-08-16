@@ -1,9 +1,11 @@
-import { access, constants as fsConstants, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, constants as fsConstants, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { typedError } from '../../domain/workspace-session.js';
-import { captureProjectTestFiles } from './test-files.js';
+import { captureProjectTestFiles, prepareTestArtifacts } from './test-files.js';
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -67,6 +69,14 @@ async function projectHasPackage(cwd, packageName) {
   }
 }
 
+function projectPackageEntry(cwd, packageName) {
+  try {
+    return createRequire(path.join(cwd, 'package.json')).resolve(packageName);
+  } catch (cause) {
+    throw typedError('TEST_LAUNCHER_MISSING', undefined, cause);
+  }
+}
+
 /**
  * Runner for the Web Test Runner compatibility path. It writes an Academy-owned
  * WTR config into the target project and invokes the public WTR CLI through the
@@ -100,30 +110,34 @@ export class WtrRunner {
     const capturedTests = await captureProjectTestFiles(cwd);
     const testFiles = capturedTests.files;
     if (testFiles.length === 0) return Object.freeze({ ok: false, code: 'TEST_NO_TESTS', params: Object.freeze({}) });
+    const artifacts = await prepareTestArtifacts(cwd, capturedTests);
     let configPath;
     let temporaryDirectory;
     const launcherSpecifier = (await projectHasPackage(cwd, '@web/test-runner-playwright'))
-      ? '@web/test-runner-playwright'
+      ? pathToFileURL(projectPackageEntry(cwd, '@web/test-runner-playwright')).href
       : this.#launcherEntry === undefined
         ? undefined
         : pathToFileURL(this.#launcherEntry).href;
     if (launcherSpecifier === undefined) throw typedError('TEST_LAUNCHER_MISSING');
     const junitSpecifier = (await projectHasPackage(cwd, '@web/test-runner-junit-reporter'))
-      ? '@web/test-runner-junit-reporter'
+      ? pathToFileURL(projectPackageEntry(cwd, '@web/test-runner-junit-reporter')).href
       : this.#junitEntry === undefined
         ? undefined
         : pathToFileURL(this.#junitEntry).href;
     try {
-      await mkdir(path.join(cwd, 'test', 'coverage'), { recursive: true });
       const source = configSource(launcherSpecifier, request.browserExecutable, junitSpecifier, testFiles);
-      temporaryDirectory = await mkdtemp(path.join(cwd, 'test', 'coverage', '.open-cells-wtr-'));
+      temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'open-cells-wtr-'));
       configPath = path.join(temporaryDirectory, 'config.mjs');
       await writeFile(configPath, source, { flag: 'wx', mode: 0o600 });
     } catch (cause) {
+      if (temporaryDirectory !== undefined) {
+        try {
+          await rm(temporaryDirectory, { recursive: true, force: true });
+        } catch {}
+      }
       throw typedError('TEST_ARTIFACT_FAILED', undefined, cause);
     }
-    const configArgument = path.relative(cwd, configPath).split(path.sep).join('/');
-    const args = ['--config', configArgument];
+    const args = ['--config', configPath];
     if (request.watch === true) args.push('--watch');
     if (request.updateSnapshots === true) args.push('--update-snapshots');
     if (request.coverage === true) args.push('--coverage');
@@ -137,7 +151,7 @@ export class WtrRunner {
         env: request.env ?? Object.freeze({}),
         signal: request.signal,
         timeoutMs: request.timeoutMs,
-        beforeSpawn: capturedTests.verify
+        beforeSpawn: artifacts.verify
       }));
       if (!isRecord(result)) throw typedError('TEST_TOOL_FAILED');
     } catch (cause) {

@@ -1,4 +1,4 @@
-import { lstat, readdir, realpath } from 'node:fs/promises';
+import { lstat, mkdir, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 
 import { typedError } from '../../domain/workspace-session.js';
@@ -103,4 +103,31 @@ export async function captureProjectTestFiles(root) {
 
 export async function discoverProjectTestFiles(root) {
   return (await captureProjectTestFiles(root)).files;
+}
+
+export async function prepareTestArtifacts(root, capturedTests) {
+  if (capturedTests === null || typeof capturedTests !== 'object' || typeof capturedTests.verify !== 'function') {
+    throw typedError('TEST_ARTIFACT_FAILED');
+  }
+  try {
+    await capturedTests.verify();
+    const testRoot = path.join(root, 'test');
+    const testGuard = await captureGuard(testRoot, 'directory', root);
+    const coverageRoot = path.join(testRoot, 'coverage');
+    const coverageStatus = await status(coverageRoot);
+    if (coverageStatus === undefined) await mkdir(coverageRoot, { recursive: false, mode: 0o700 });
+    const coverageGuard = await captureGuard(coverageRoot, 'directory', root);
+    await capturedTests.verify();
+    return Object.freeze({
+      coverageRoot,
+      async verify() {
+        await capturedTests.verify();
+        await verifyGuard(testGuard);
+        await verifyGuard(coverageGuard);
+      }
+    });
+  } catch (cause) {
+    if (cause?.code === 'TEST_ARTIFACT_FAILED') throw cause;
+    throw typedError('TEST_ARTIFACT_FAILED', undefined, cause);
+  }
 }
