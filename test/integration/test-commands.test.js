@@ -11,6 +11,7 @@ import { testComponent } from '../../src/application/component/test-component.js
 import { NodeFilesystem } from '../../src/adapters/node/node-filesystem.js';
 import { WorkspaceSession } from '../../src/domain/workspace-session.js';
 import { BrowserCapability } from '../../src/adapters/testing/browser-capability.js';
+import { captureProjectTestFiles, prepareTestArtifacts } from '../../src/adapters/testing/test-files.js';
 import { VitestBrowserRunner } from '../../src/adapters/testing/vitest-browser-runner.js';
 import { WtrRunner } from '../../src/adapters/testing/wtr-runner.js';
 import { createFakeTestToolchain } from '../fixtures/task-12-testing/fake-testing.js';
@@ -104,6 +105,15 @@ test('red: app/test-only projects provision guarded project-local artifacts for 
   assert.equal(vitest.vitestLast.args.includes('app/test/unit/owned.test.js'), true);
   assert.equal(wtr.wtrConfigSource.includes('app/test/unit/owned.test.js'), true);
   assert.equal((await lstat(path.join(root, 'test', 'coverage'))).isDirectory(), true);
+});
+
+test('red: platforms without anchored directory creation fail closed before creating test artifacts', async t => {
+  const { root } = await workspace(t);
+  await writeWorkspaceFile(root, 'app/test/unit/owned.test.js', 'it("owned", () => {});\n');
+  const captured = await captureProjectTestFiles(root);
+
+  await assertCode(prepareTestArtifacts(root, captured, { platform: 'win32' }), 'TEST_ARTIFACT_FAILED');
+  await assert.rejects(lstat(path.join(root, 'test')), error => error?.code === 'ENOENT');
 });
 
 test('red: test launch revalidates captured test ancestors immediately before spawning the runner', async t => {

@@ -105,9 +105,9 @@ export async function discoverProjectTestFiles(root) {
   return (await captureProjectTestFiles(root)).files;
 }
 
-async function mkdirBelowGuard(guard, name) {
+async function mkdirBelowGuard(guard, name, platform) {
   await verifyGuard(guard);
-  if (process.platform === 'linux' && Number.isInteger(fsConstants.O_DIRECTORY) && Number.isInteger(fsConstants.O_NOFOLLOW)) {
+  if (platform === 'linux' && Number.isInteger(fsConstants.O_DIRECTORY) && Number.isInteger(fsConstants.O_NOFOLLOW)) {
     const handle = await open(guard.candidate, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
     try {
       await mkdir(`/proc/self/fd/${handle.fd}/${name}`, { recursive: false, mode: 0o700 });
@@ -115,26 +115,31 @@ async function mkdirBelowGuard(guard, name) {
       await handle.close();
     }
   } else {
-    await mkdir(path.join(guard.candidate, name), { recursive: false, mode: 0o700 });
+    throw typedError('TEST_ARTIFACT_FAILED');
   }
   await verifyGuard(guard);
 }
 
-export async function prepareTestArtifacts(root, capturedTests) {
+export async function prepareTestArtifacts(root, capturedTests, options = undefined) {
   if (capturedTests === null || typeof capturedTests !== 'object' || typeof capturedTests.verify !== 'function') {
     throw typedError('TEST_ARTIFACT_FAILED');
   }
+  if (options !== undefined && (options === null || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(key => key !== 'platform'))) {
+    throw typedError('TEST_ARTIFACT_FAILED');
+  }
+  const platform = options?.platform ?? process.platform;
+  if (typeof platform !== 'string' || platform.length === 0) throw typedError('TEST_ARTIFACT_FAILED');
   try {
     await capturedTests.verify();
     const testRoot = path.join(root, 'test');
     if (await status(testRoot) === undefined) {
       const rootGuard = await captureGuard(root, 'directory', root);
-      await mkdirBelowGuard(rootGuard, 'test');
+      await mkdirBelowGuard(rootGuard, 'test', platform);
     }
     const testGuard = await captureGuard(testRoot, 'directory', root);
     const coverageRoot = path.join(testRoot, 'coverage');
     const coverageStatus = await status(coverageRoot);
-    if (coverageStatus === undefined) await mkdirBelowGuard(testGuard, 'coverage');
+    if (coverageStatus === undefined) await mkdirBelowGuard(testGuard, 'coverage', platform);
     const coverageGuard = await captureGuard(coverageRoot, 'directory', root);
     await capturedTests.verify();
     return Object.freeze({
