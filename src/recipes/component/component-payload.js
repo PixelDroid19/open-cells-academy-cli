@@ -468,6 +468,7 @@ export function createComponentPayload(input = {}) {
   const keys = messageKeys(name);
   const locales = componentCatalogs(name, keys);
   let plan = ScaffoldPlan.empty()
+    .addDirectory('test/coverage')
     .addFile('index.html', rootIndexSource())
     .addFile('index.js', `export { ${className} } from './${name}.js';\n`)
     .addFile(`${name}.js`, entrypointSource(name, className))

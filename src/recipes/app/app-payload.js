@@ -1013,6 +1013,7 @@ export function createApplicationPayload(profile, { e2e = false, name = profile 
   const catalogs = catalogRecords(payload);
   const profileRuntime = profileRuntimeSource(profile);
   let plan = ScaffoldPlan.empty()
+    .addDirectory('test/coverage')
     .addFile('index.html', indexSource())
     .addFile('app/config/dev.js', cellsConfigSource(payload, name, false))
     .addFile('app/config/prod.js', cellsConfigSource(payload, name, true))

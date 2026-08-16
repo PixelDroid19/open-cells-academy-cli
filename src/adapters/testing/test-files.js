@@ -144,6 +144,7 @@ export async function prepareTestArtifacts(root, capturedTests, options = undefi
     await capturedTests.verify();
     return Object.freeze({
       coverageRoot,
+      projectOutput: coverageGuard !== undefined,
       async verify() {
         await capturedTests.verify();
         if (testGuard !== undefined) await verifyGuard(testGuard);

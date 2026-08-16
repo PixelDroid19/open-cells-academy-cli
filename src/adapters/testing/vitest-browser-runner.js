@@ -45,12 +45,17 @@ function outcome(result, request) {
 export class VitestBrowserRunner {
   #process;
   #vitestExecutable;
+  #platform;
 
-  constructor(process, vitestExecutable = 'vitest') {
+  constructor(process, vitestExecutable = 'vitest', options = undefined) {
     assertProcess(process);
     if (typeof vitestExecutable !== 'string' || vitestExecutable.length === 0) throw typedError('TEST_RUNNER_INVALID');
+    if (options !== undefined && (options === null || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(key => key !== 'platform'))) throw typedError('TEST_RUNNER_INVALID');
+    const platform = options?.platform ?? globalThis.process.platform;
+    if (typeof platform !== 'string' || platform.length === 0) throw typedError('TEST_RUNNER_INVALID');
     this.#process = process;
     this.#vitestExecutable = vitestExecutable;
+    this.#platform = platform;
     Object.freeze(this);
   }
 
@@ -63,7 +68,8 @@ export class VitestBrowserRunner {
     if (request.updateSnapshots === true) args.push('--update');
     if (request.coverage === true) args.push('--coverage');
     const cwd = request.session.root;
-    const artifacts = await prepareTestArtifacts(cwd, capturedTests);
+    const artifacts = await prepareTestArtifacts(cwd, capturedTests, { platform: this.#platform });
+    if (request.coverage === true && artifacts.projectOutput !== true) throw typedError('TEST_ARTIFACT_FAILED');
     try {
       const result = await this.#process.runProcess(Object.freeze({
         file: this.#vitestExecutable,

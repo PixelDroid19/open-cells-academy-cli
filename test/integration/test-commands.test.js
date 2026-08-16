@@ -115,8 +115,28 @@ test('red: platforms without anchored directory creation leave artifacts to the 
   const artifacts = await prepareTestArtifacts(root, captured, { platform: 'win32' });
 
   assert.equal(artifacts.coverageRoot, path.join(root, 'test', 'coverage'));
+  assert.equal(artifacts.projectOutput, false);
   await artifacts.verify();
   await assert.rejects(lstat(path.join(root, 'test')), error => error?.code === 'ENOENT');
+});
+
+test('red: WTR omits workspace report paths when a portable artifact anchor is unavailable', async t => {
+  const { root, session } = await workspace(t);
+  await writeWorkspaceFile(root, 'app/test/unit/owned.test.js', 'it("owned", () => {});\n');
+  const fake = createFakeTestToolchain();
+  const runner = new WtrRunner(
+    fake,
+    'web-test-runner',
+    path.join(root, 'cli-launcher', 'index.mjs'),
+    path.join(root, 'cli-junit', 'index.mjs'),
+    { platform: 'win32' }
+  );
+
+  await assertCode(runner.run(Object.freeze({ session, coverage: true })), 'TEST_ARTIFACT_FAILED');
+  const outcome = await runner.run(Object.freeze({ session }));
+
+  assert.equal(outcome.ok, true);
+  assert.equal(fake.wtrConfigSource.includes('test/coverage'), false);
 });
 
 test('red: test launch revalidates captured test ancestors immediately before spawning the runner', async t => {

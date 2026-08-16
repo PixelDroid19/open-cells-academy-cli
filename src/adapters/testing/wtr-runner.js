@@ -39,14 +39,18 @@ function outcome(result) {
   return Object.freeze({ ok: false, code: 'TEST_FAILED', params: summaryFrom(result) });
 }
 
-function configSource(launcherSpecifier, browserExecutable, junitSpecifier, testFiles) {
+function configSource(launcherSpecifier, browserExecutable, junitSpecifier, testFiles, reportDirectory) {
   const launcherOptions = typeof browserExecutable === 'string' && browserExecutable.length > 0
     ? `{ product: 'chromium', launchOptions: { executablePath: ${JSON.stringify(browserExecutable)} } }`
     : `{ product: 'chromium' }`;
-  const junitImport = junitSpecifier === undefined ? '' : `import { junitReporter } from '${junitSpecifier}';\n`;
-  const reporters = junitSpecifier === undefined
+  const reportLiteral = reportDirectory === 'test/coverage' ? "'test/coverage'" : JSON.stringify(reportDirectory);
+  const junitImport = junitSpecifier === undefined || reportDirectory === undefined ? '' : `import { junitReporter } from '${junitSpecifier}';\n`;
+  const reporters = junitSpecifier === undefined || reportDirectory === undefined
     ? `reporters: ['default'],`
-    : `reporters: ['default', junitReporter({ outputPath: 'test/coverage/junit-report.xml' })],`;
+    : `reporters: ['default', junitReporter({ outputPath: ${reportDirectory === 'test/coverage' ? "'test/coverage/junit-report.xml'" : JSON.stringify(path.join(reportDirectory, 'junit-report.xml'))} })],`;
+  const coverageConfig = reportDirectory === undefined
+    ? ''
+    : `coverageConfig: { reportDir: ${reportLiteral} },`;
   return `${junitImport}import { playwrightLauncher } from '${launcherSpecifier}';
 
 export default {
@@ -54,7 +58,7 @@ export default {
   files: ${JSON.stringify(testFiles)},
   testFramework: { config: { ui: 'tdd' } },
   browsers: [playwrightLauncher(${launcherOptions})],
-  coverageConfig: { reportDir: 'test/coverage' },
+  ${coverageConfig}
   ${reporters}
 };
 `;
@@ -91,16 +95,21 @@ export class WtrRunner {
   #wtrExecutable;
   #launcherEntry;
   #junitEntry;
+  #platform;
 
-  constructor(process, wtrExecutable = 'web-test-runner', launcherEntry = undefined, junitEntry = undefined) {
+  constructor(process, wtrExecutable = 'web-test-runner', launcherEntry = undefined, junitEntry = undefined, options = undefined) {
     assertProcess(process);
     if (typeof wtrExecutable !== 'string' || wtrExecutable.length === 0) throw typedError('TEST_RUNNER_INVALID');
     if (launcherEntry !== undefined && (typeof launcherEntry !== 'string' || launcherEntry.length === 0)) throw typedError('TEST_RUNNER_INVALID');
     if (junitEntry !== undefined && (typeof junitEntry !== 'string' || junitEntry.length === 0)) throw typedError('TEST_RUNNER_INVALID');
+    if (options !== undefined && (options === null || typeof options !== 'object' || Array.isArray(options) || Object.keys(options).some(key => key !== 'platform'))) throw typedError('TEST_RUNNER_INVALID');
+    const platform = options?.platform ?? globalThis.process.platform;
+    if (typeof platform !== 'string' || platform.length === 0) throw typedError('TEST_RUNNER_INVALID');
     this.#process = process;
     this.#wtrExecutable = wtrExecutable;
     this.#launcherEntry = launcherEntry;
     this.#junitEntry = junitEntry;
+    this.#platform = platform;
     Object.freeze(this);
   }
 
@@ -110,7 +119,8 @@ export class WtrRunner {
     const capturedTests = await captureProjectTestFiles(cwd);
     const testFiles = capturedTests.files;
     if (testFiles.length === 0) return Object.freeze({ ok: false, code: 'TEST_NO_TESTS', params: Object.freeze({}) });
-    const artifacts = await prepareTestArtifacts(cwd, capturedTests);
+    const artifacts = await prepareTestArtifacts(cwd, capturedTests, { platform: this.#platform });
+    if (request.coverage === true && artifacts.projectOutput !== true) throw typedError('TEST_ARTIFACT_FAILED');
     let configPath;
     let temporaryDirectory;
     const launcherSpecifier = (await projectHasPackage(cwd, '@web/test-runner-playwright'))
@@ -125,7 +135,13 @@ export class WtrRunner {
         ? undefined
         : pathToFileURL(this.#junitEntry).href;
     try {
-      const source = configSource(launcherSpecifier, request.browserExecutable, junitSpecifier, testFiles);
+      const source = configSource(
+        launcherSpecifier,
+        request.browserExecutable,
+        junitSpecifier,
+        testFiles,
+        artifacts.projectOutput === true ? 'test/coverage' : undefined
+      );
       temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'open-cells-wtr-'));
       configPath = path.join(temporaryDirectory, 'config.mjs');
       await writeFile(configPath, source, { flag: 'wx', mode: 0o600 });
