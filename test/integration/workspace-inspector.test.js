@@ -36,6 +36,21 @@ test('integration: inspectWorkspace derives available app configurations and bui
   assert.equal(inspected.defaultBuildConfig, 'prod.js');
 });
 
+test('integration: inspectWorkspace discovers nested established-app DEV and QA configurations', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'open-cells-nested-app-configs-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({ name: 'established-cells-app', version: '1.0.0' }));
+  await mkdir(path.join(root, 'app', 'config', 'co'), { recursive: true });
+  await writeFile(path.join(root, 'app', 'config', 'co', 'web-dev.js'), 'module.exports = {};');
+  await writeFile(path.join(root, 'app', 'config', 'co', 'web-test.js'), 'module.exports = {};');
+
+  const inspected = await inspectWorkspace(root);
+  assert.deepEqual(inspected.appConfigs, ['co/web-dev.js', 'co/web-test.js']);
+  assert.equal(inspected.defaultAppConfig, 'co/web-dev.js');
+  assert.equal(inspected.defaultBuildConfig, 'co/web-dev.js');
+});
+
 test('integration: inspectWorkspace detects OpenCells Lit Component workspace', async t => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'open-cells-comp-'));
   t.after(() => rm(root, { recursive: true, force: true }));

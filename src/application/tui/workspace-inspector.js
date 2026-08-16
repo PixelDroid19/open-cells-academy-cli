@@ -2,6 +2,29 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { testRunnerForManifest } from '../../domain/test-runner-policy.js';
 
+async function appConfigFiles(configRoot, relative = '') {
+  const entries = await readdir(path.join(configRoot, relative), { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    if (entry.isSymbolicLink()) continue;
+    const child = relative === '' ? entry.name : `${relative}/${entry.name}`;
+    if (entry.isDirectory()) {
+      files.push(...await appConfigFiles(configRoot, child));
+    } else if (entry.isFile() && (entry.name.endsWith('.js') || entry.name.endsWith('.mjs'))) {
+      files.push(child);
+    }
+  }
+  return files;
+}
+
+function preferredConfig(configs, names) {
+  for (const name of names) {
+    const match = configs.find(config => path.posix.basename(config) === name);
+    if (match !== undefined) return match;
+  }
+  return configs[0];
+}
+
 /**
  * Non-destructively inspects a workspace directory to determine its OpenCells project type and configuration.
  * @param {string} cwd
@@ -24,11 +47,10 @@ export async function inspectWorkspace(cwd = process.cwd()) {
     if (appDirStat.isDirectory()) {
       let appConfigs = [];
       try {
-        const configEntries = await readdir(path.join(root, 'app', 'config'));
-        appConfigs = configEntries.filter(file => file.endsWith('.js') || file.endsWith('.mjs')).sort();
+        appConfigs = (await appConfigFiles(path.join(root, 'app', 'config'))).sort();
       } catch {}
-      const defaultAppConfig = appConfigs.includes('dev.js') ? 'dev.js' : appConfigs[0];
-      const defaultBuildConfig = appConfigs.includes('prod.js') ? 'prod.js' : defaultAppConfig;
+      const defaultAppConfig = preferredConfig(appConfigs, ['dev.js', 'web-dev.js']);
+      const defaultBuildConfig = preferredConfig(appConfigs, ['prod.js', 'web-prod.js']) ?? defaultAppConfig;
 
       return Object.freeze({
         name,
