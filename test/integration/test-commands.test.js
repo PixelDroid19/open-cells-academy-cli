@@ -107,12 +107,15 @@ test('red: app/test-only projects provision guarded project-local artifacts for 
   assert.equal((await lstat(path.join(root, 'test', 'coverage'))).isDirectory(), true);
 });
 
-test('red: platforms without anchored directory creation fail closed before creating test artifacts', async t => {
+test('red: platforms without anchored directory creation leave artifacts to the test tool without mutating the workspace', async t => {
   const { root } = await workspace(t);
   await writeWorkspaceFile(root, 'app/test/unit/owned.test.js', 'it("owned", () => {});\n');
   const captured = await captureProjectTestFiles(root);
 
-  await assertCode(prepareTestArtifacts(root, captured, { platform: 'win32' }), 'TEST_ARTIFACT_FAILED');
+  const artifacts = await prepareTestArtifacts(root, captured, { platform: 'win32' });
+
+  assert.equal(artifacts.coverageRoot, path.join(root, 'test', 'coverage'));
+  await artifacts.verify();
   await assert.rejects(lstat(path.join(root, 'test')), error => error?.code === 'ENOENT');
 });
 
