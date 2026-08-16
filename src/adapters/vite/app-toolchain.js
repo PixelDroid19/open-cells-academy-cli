@@ -375,7 +375,7 @@ async function copyIfPresent(source, target) {
 
 function localScriptPaths(html) {
   const paths = new Set();
-  const base = new URL('https://open-cells.local/');
+  const base = new URL('http://127.0.0.1/');
   for (const match of html.matchAll(/<script\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1[^>]*>/giu)) {
     let source;
     try {
