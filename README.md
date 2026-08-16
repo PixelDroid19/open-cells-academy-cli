@@ -127,6 +127,23 @@ memory; the CLI does not overwrite the application's `index.html`, bootstrap,
 or generated config source while serving. Changes to the selected configuration
 trigger a full Vite refresh.
 
+The same nested profile is accepted by the remaining application lifecycle:
+
+```bash
+cells app:build -c market/web-dev.js
+cells app:test
+cells app:locales -c market/web-dev.js
+```
+
+`app:build` publishes to `build/market/web-dev`, including local scripts still
+referenced by the generated HTML and the locale catalogs selected by the
+configuration. `app:test` runs only tests owned by the application (never tests
+inside vendored components or `node_modules`) and detects Web Test Runner when
+the project declares it; otherwise it uses Vitest. A project with no owned unit
+tests reports that condition instead of executing dependency tests. Running
+`cells` in an interactive terminal discovers nested profiles such as
+`market/web-dev.js` and makes them selectable from the TUI.
+
 ## Create a component
 
 Save this as `component.json` in an empty directory:
