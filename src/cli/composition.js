@@ -632,6 +632,7 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
         session,
         toolchain: tools.app,
         configName: optionOf(parsed, 'config'),
+        runtime: parsed.invokedCommand === 'app:serve' ? 'legacy-dist' : 'source',
         options
       }));
     }

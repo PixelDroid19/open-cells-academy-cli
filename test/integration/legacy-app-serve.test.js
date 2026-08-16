@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -26,8 +26,11 @@ async function fixture(t) {
   await write(root, 'app/tpls/index.tpl', '<!doctype html><html lang="##lang##"><body data-label="##label##"><script src="/scripts/vendor/runtime.js"></script><script type="module" src="/scripts/app-bootstrap.js"></script></body></html>\n');
   await write(root, 'app/scripts/app-bootstrap.js', '(function () { window.AppConfig = {}; window.__runtimeEnvironment = window.AppConfig.environment; }());\n');
   await write(root, 'app/scripts/vendor/runtime.js', 'window.__legacyVendorLoaded = true;\nwindow.__sourceMapText = "//# sourceMappingURL=kept.js.map";\n//# sourceMappingURL=runtime.js.map\n');
-  await write(root, 'app/config/market/dev.js', 'export default { lang: "es", label: "DEV", environment: "de" };\n');
-  await write(root, 'app/config/market/qa.js', 'export default { lang: "es", label: "QA", environment: "qa" };\n');
+  await write(root, 'app/config/market/dev.js', 'export default { lang: "es", label: "DEV", environment: "de", componentsPath: "components/" };\n');
+  await write(root, 'app/config/market/qa.js', 'export default { lang: "es", label: "QA", environment: "qa", componentsPath: "components/" };\n');
+  await write(root, 'dist/index.html', '<!doctype html><html><body><main data-runtime="dist">legacy-ready</main><script src="/cells-polymer-bridge.min.js"></script><script type="module" src="/app-module.js"></script></body></html>\n');
+  await write(root, 'dist/app-module.js', 'window.AppConfig = {}; document.body.dataset.environment = window.AppConfig.environment;\n');
+  await write(root, 'dist/cells-polymer-bridge.min.js', 'window.__bridgeLoaded = true;\nwindow.__sourceMapText = "//# sourceMappingURL=kept.js.map";\n//# sourceMappingURL=cells-polymer-bridge.min.js.map\n');
   const session = await WorkspaceSession.open(root, new NodeFilesystem());
   return { root, session };
 }
@@ -93,6 +96,79 @@ test('integration: real Vite serves distinct legacy DEV and QA profiles without 
   handle = undefined;
 
   assert.deepEqual(await Promise.all(sourcePaths.map(relative => readFile(path.join(root, relative), 'utf8'))), originals);
+});
+
+test('integration: legacy app:serve runs the prepared dist tree with the selected nested config', async t => {
+  const { root, session } = await fixture(t);
+  const toolchain = new AppToolchain(Object.freeze({
+    ...vite,
+    async createServer() {
+      throw new Error('legacy dist must not pass through the Vite transform server');
+    }
+  }));
+  const sourcePaths = ['dist/index.html', 'dist/app-module.js'];
+  const originals = await Promise.all(sourcePaths.map(relative => readFile(path.join(root, relative), 'utf8')));
+  let handle;
+  t.after(async () => handle?.close());
+
+  handle = await devApp(Object.freeze({
+    session,
+    toolchain,
+    configName: 'market/dev.js',
+    runtime: 'legacy-dist',
+    options: Object.freeze({ host: '127.0.0.1', port: 0, strictPort: true, open: false })
+  }));
+  const ready = await handle.ready;
+  const html = await (await fetch(ready.url)).text();
+  const appModule = await (await fetch(new URL('app-module.js', ready.url))).text();
+  const bridge = await (await fetch(new URL('cells-polymer-bridge.min.js', ready.url))).text();
+
+  assert.match(html, /data-runtime="dist"/);
+  assert.doesNotMatch(html, />stale</);
+  assert.match(appModule, /"environment":"de"/);
+  assert.match(appModule, /"componentsPath":"\.\/bower_components\/"/);
+  assert.equal(bridge, 'window.__bridgeLoaded = true;\nwindow.__sourceMapText = "//# sourceMappingURL=kept.js.map";\n//# sourceMappingURL=cells-polymer-bridge.min.js.map\n');
+  await handle.close();
+  handle = undefined;
+  assert.deepEqual(await Promise.all(sourcePaths.map(relative => readFile(path.join(root, relative), 'utf8'))), originals);
+});
+
+test('integration: legacy app:serve keeps static reads contained and owns strict-port lifecycle', async t => {
+  const { root, session } = await fixture(t);
+  const outside = await mkdtemp(path.join(os.tmpdir(), 'open-cells-legacy-outside-'));
+  t.after(() => rm(outside, { recursive: true, force: true }));
+  await write(outside, 'secret.js', 'external-secret\n');
+  await symlink(path.join(outside, 'secret.js'), path.join(root, 'dist', 'escape.js'));
+  const toolchain = new AppToolchain(Object.freeze({
+    ...vite,
+    async createServer() {
+      throw new Error('legacy dist must not pass through Vite');
+    }
+  }));
+  const handles = [];
+  t.after(async () => Promise.all(handles.map(handle => handle.close())));
+  const context = (port, strictPort) => Object.freeze({
+    session,
+    toolchain,
+    configName: 'market/dev.js',
+    runtime: 'legacy-dist',
+    options: Object.freeze({ host: '127.0.0.1', port, strictPort, open: false })
+  });
+
+  const first = await devApp(context(0, true));
+  handles.push(first);
+  const ready = await first.ready;
+  assert.equal((await fetch(new URL('missing.js', ready.url))).status, 404);
+  assert.equal((await fetch(new URL('escape.js', ready.url))).status, 404);
+  const head = await fetch(new URL('app-module.js', ready.url), { method: 'HEAD' });
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), '');
+  assert.equal((await fetch(ready.url, { method: 'POST' })).status, 405);
+
+  await assert.rejects(devApp(context(ready.port, true)), error => error.code === 'VITE_DEV_FAILED');
+  const fallback = await devApp(context(ready.port, false));
+  handles.push(fallback);
+  assert.notEqual((await fallback.ready).port, ready.port);
 });
 
 test('integration: real Vite build consumes the rendered legacy HTML before emitting asset references', async t => {

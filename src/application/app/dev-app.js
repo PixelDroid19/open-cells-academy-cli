@@ -15,12 +15,15 @@ function normalizedContext(context) {
   if (context.onCloseError !== undefined && typeof context.onCloseError !== 'function') throw typedError('APP_DEV_INVALID');
   const options = context.options ?? {};
   if (!isRecord(options)) throw typedError('APP_DEV_INVALID');
+  const runtime = context.runtime ?? 'source';
+  if (runtime !== 'source' && runtime !== 'legacy-dist') throw typedError('APP_DEV_INVALID');
   return Object.freeze({
     session: context.session,
     configName: context.configName,
     toolchain: context.toolchain,
     signals: context.signals,
     onCloseError: context.onCloseError,
+    runtime,
     options: Object.freeze({ ...options })
   });
 }
@@ -40,6 +43,7 @@ function serverOptions(config, context) {
     session: context.session,
     config,
     configName: context.configName,
+    runtime: context.runtime,
     host,
     port,
     strictPort,

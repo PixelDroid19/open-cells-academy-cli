@@ -521,6 +521,7 @@ test('contract: legacy app:serve parses to canonical app:dev with a nested marke
 
   assert.equal(parsed.ok, true);
   assert.equal(parsed.command.name, 'app:dev');
+  assert.equal(parsed.invokedCommand, 'app:serve');
   assert.equal(parsed.options.config, 'co/web-dev.js');
   assert.equal(parsed.options.host, '127.0.0.1');
   assert.equal(parsed.options.port, 41211);

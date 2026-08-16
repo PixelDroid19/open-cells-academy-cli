@@ -184,11 +184,12 @@ function isValueToken(token, type) {
   return type === 'number' && /^-\d+$/.test(token);
 }
 
-function commandResult(command, options, providedOptions, language) {
+function commandResult(command, options, providedOptions, language, invokedCommand) {
   return freezeResult({
     ok: true,
     action: 'command',
     command,
+    invokedCommand,
     options: deepFreeze(options),
     providedOptions: deepFreeze(providedOptions),
     language
@@ -215,7 +216,7 @@ function validateRequired(command, options, language) {
   return undefined;
 }
 
-function parseCommand(argv, command, startIndex, initialLanguage) {
+function parseCommand(argv, command, startIndex, initialLanguage, invokedCommand = command.name) {
   const aliases = optionIndex(command);
   const options = {};
   const providedOptions = {};
@@ -327,7 +328,7 @@ function parseCommand(argv, command, startIndex, initialLanguage) {
     return error(language, 'UNKNOWN_OPTION', 'unknown_option', { option: alias, command: command.name });
   }
 
-  return validateRequired(command, options, language) ?? commandResult(command, options, providedOptions, language);
+  return validateRequired(command, options, language) ?? commandResult(command, options, providedOptions, language, invokedCommand);
 }
 
 function parseRootAction(argv, startIndex, action, language) {
@@ -505,7 +506,7 @@ export function parseArgv(argv, registry, context = {}) {
       return error(language, 'UNKNOWN_COMMAND', 'unknown_command', { command: String(token) });
     }
 
-    return parseCommand(input, command, index + 1, language);
+    return parseCommand(input, command, index + 1, language, token);
   }
 
   if (isInteractiveTty(context)) {

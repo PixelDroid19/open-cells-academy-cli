@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import { typedError } from '../../domain/workspace-session.js';
 import { loadCellsConfig } from './config-loader.js';
+import { readStageFile } from './stage-capture.js';
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -103,6 +104,47 @@ async function verifyFile(source) {
   }
 }
 
+function assetPath(pathname) {
+  if (typeof pathname !== 'string') throw typedError('LEGACY_APP_RUNTIME_INVALID');
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname).replace(/^\/+/, '');
+  } catch (cause) {
+    throw runtimeFailure(cause);
+  }
+  if (decoded === '') return 'index.html';
+  const segments = decoded.split('/');
+  if (decoded.includes('\\') || segments.some(segment => segment === '' || segment === '.' || segment === '..' || segment.includes('\0'))) {
+    throw typedError('LEGACY_APP_RUNTIME_INVALID');
+  }
+  return segments.join('/');
+}
+
+async function readAsset(directory, pathname) {
+  const relativePath = assetPath(pathname);
+  await verifyDirectory(directory);
+  const candidate = path.join(directory.candidate, ...relativePath.split('/'));
+  try {
+    const source = await lstat(candidate);
+    if (!source.isFile() || source.isSymbolicLink()) return undefined;
+    const canonicalFile = await realpath(candidate);
+    if (!isWithin(directory.canonicalDirectory, canonicalFile)) throw typedError('LEGACY_APP_RUNTIME_INVALID');
+    const content = await readStageFile(candidate, Object.freeze({ dev: source.dev, ino: source.ino }), {
+      invalidCode: 'LEGACY_APP_RUNTIME_INVALID',
+      failure: runtimeFailure
+    });
+    const current = await lstat(candidate);
+    if (!current.isFile() || current.isSymbolicLink() || !sameIdentity(source, current) || await realpath(candidate) !== canonicalFile) {
+      throw typedError('PATH_CHANGED');
+    }
+    await verifyDirectory(directory);
+    return Object.freeze({ content, relativePath });
+  } catch (cause) {
+    if (cause?.code === 'ENOENT') return undefined;
+    throw runtimeFailure(cause);
+  }
+}
+
 function valueAt(config, token) {
   let current = config;
   for (const segment of token.split('.')) {
@@ -163,6 +205,10 @@ function replaceAppConfig(source, config) {
   return `${source.slice(0, range.start)}window.AppConfig = ${serializedConfig(config)}${source.slice(range.end)}`;
 }
 
+function distConfig(config) {
+  return Object.freeze({ ...config, componentsPath: './bower_components/' });
+}
+
 function cleanViteId(id) {
   return typeof id === 'string' ? id.split('?', 1)[0] : '';
 }
@@ -208,6 +254,23 @@ async function withoutMissingSourceMaps(code, id, appRoot) {
     offset = removal.end;
   }
   return `${output}${code.slice(offset)}`;
+}
+
+function sourceMapPlugin(name, directory) {
+  return Object.freeze({
+    name,
+    enforce: 'pre',
+    async load(id) {
+      const sourceFile = cleanViteId(id);
+      if (!/\.[cm]?js$/u.test(sourceFile) || !isWithin(directory.canonicalDirectory, sourceFile)) return null;
+      const relativePath = path.relative(directory.canonicalDirectory, sourceFile).split(path.sep).join('/');
+      const source = await captureFile(directory, relativePath, { optional: true });
+      if (source === undefined) return null;
+      const transformed = await withoutMissingSourceMaps(source.content, source.canonicalFile, directory.canonicalDirectory);
+      await verifyFile(source);
+      return transformed === undefined ? null : Object.freeze({ code: transformed, map: null });
+    }
+  });
 }
 
 export async function createLegacyAppPlugins(request) {
@@ -299,19 +362,34 @@ export async function createLegacyAppPlugins(request) {
       return Object.freeze({ code: replaceAppConfig(code, currentConfig), map: null });
     }
   });
-  const sourceMapPlugin = Object.freeze({
-    name: 'open-cells-legacy-source-map',
-    enforce: 'pre',
-    async load(id) {
-      const sourceFile = cleanViteId(id);
-      if (!/\.[cm]?js$/u.test(sourceFile) || !isWithin(appRoot, sourceFile)) return null;
-      const relativePath = path.relative(appRoot, sourceFile).split(path.sep).join('/');
-      const source = await captureFile(appDirectory, relativePath, { optional: true });
-      if (source === undefined) return null;
-      const transformed = await withoutMissingSourceMaps(source.content, source.canonicalFile, appRoot);
-      await verifyFile(source);
-      return transformed === undefined ? null : Object.freeze({ code: transformed, map: null });
+  return Object.freeze([templatePlugin, configPlugin, sourceMapPlugin('open-cells-legacy-source-map', appDirectory)]);
+}
+
+export async function createLegacyDistRuntime(request) {
+  if (!isRecord(request) || !Object.isFrozen(request) || !isRecord(request.session) || !path.isAbsolute(request.session.root) || typeof request.configName !== 'string' || !isRecord(request.config) || !isRecord(request.config.legacy)) {
+    throw typedError('LEGACY_APP_RUNTIME_INVALID');
+  }
+  const distDirectory = await captureDirectory(request.session, 'dist');
+  const [index, appModule] = await Promise.all([
+    captureFile(distDirectory, 'index.html'),
+    captureFile(distDirectory, 'app-module.js')
+  ]);
+
+  return Object.freeze({
+    root: distDirectory.candidate,
+    async read(pathname) {
+      const asset = await readAsset(distDirectory, pathname);
+      if (asset === undefined) return undefined;
+      if (asset.relativePath !== 'app-module.js') return asset;
+      await verifyFile(appModule);
+      const config = distConfig((await loadCellsConfig(request.session, request.configName)).legacy);
+      return Object.freeze({
+        content: Buffer.from(replaceAppConfig(asset.content.toString('utf8'), config)),
+        relativePath: asset.relativePath
+      });
+    },
+    async verify() {
+      await Promise.all([verifyDirectory(distDirectory), verifyFile(index), verifyFile(appModule)]);
     }
   });
-  return Object.freeze([templatePlugin, configPlugin, sourceMapPlugin]);
 }

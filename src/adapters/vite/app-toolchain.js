@@ -6,9 +6,10 @@ import { ScaffoldPlan } from '../../domain/scaffold-plan.js';
 import { normalizeRelativePath } from '../../domain/path-policy.js';
 import { typedError } from '../../domain/workspace-session.js';
 import { DevServer } from '../../ports/dev-server.js';
+import { startLegacyStaticServer } from '../node/legacy-static-server.js';
 import { generateAppHtml } from './html-generator.js';
 import { sassPreprocessorOptions } from './sass-log.js';
-import { createLegacyAppPlugins } from './legacy-app-runtime.js';
+import { createLegacyAppPlugins, createLegacyDistRuntime } from './legacy-app-runtime.js';
 import {
   captureStageDirectory,
   createOwnedStage,
@@ -534,6 +535,17 @@ export class AppToolchain {
     const restoreDebug = options.debug === true ? enableViteDebugLogging() : undefined;
     let server;
     try {
+      if (options.runtime === 'legacy-dist') {
+        if (options.config === undefined || typeof options.configName !== 'string') throw typedError('VITE_OPTIONS_INVALID');
+        const runtime = await createLegacyDistRuntime(Object.freeze({ session: options.session, configName: options.configName, config: options.config }));
+        return await startLegacyStaticServer({
+          runtime,
+          host: options.host,
+          port: options.port,
+          strictPort: options.strictPort,
+          onDispose: restoreDebug
+        });
+      }
       const appSource = await captureAppTemplate(options.session);
       await verifyAppTemplate(appSource);
       const legacyPlugins = appSource.markerPath === undefined && options.config !== undefined
