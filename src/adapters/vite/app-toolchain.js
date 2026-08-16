@@ -411,6 +411,7 @@ async function copyReferencedStaticScripts(appRoot, stage) {
 
 async function writeLocalePlan(stage, plan) {
   for (const file of ScaffoldPlan.snapshot(plan).files) {
+    if (!file.path.startsWith('dist/')) continue;
     const relative = file.path.replace(/^dist\//, '');
     const target = path.join(stage, ...normalizeRelativePath(relative));
     await mkdir(path.dirname(target), { recursive: true });

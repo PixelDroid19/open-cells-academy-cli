@@ -401,19 +401,55 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
   const appLocalePublisher = Object.freeze({
     async publish(activeSession, plan, publishOptions) {
       let localePlan = ScaffoldPlan.empty();
+      const testingPlans = new Map();
       for (const file of ScaffoldPlan.snapshot(plan).files) {
-        if (!file.path.startsWith('dist/locales/')) throw typedError('LOCALES_REQUEST_INVALID');
-        localePlan = localePlan.addFile(file.path.slice('dist/locales/'.length), file.content, file.mode === undefined ? undefined : { mode: file.mode });
+        if (file.path.startsWith('dist/locales/')) {
+          localePlan = localePlan.addFile(file.path.slice('dist/locales/'.length), file.content, file.mode === undefined ? undefined : { mode: file.mode });
+          continue;
+        }
+        const match = file.path.match(/^(test\/unit\/.+\/locales)\/(.+)$/);
+        if (match === null) throw typedError('LOCALES_REQUEST_INVALID');
+        const current = testingPlans.get(match[1]) ?? ScaffoldPlan.empty();
+        testingPlans.set(match[1], current.addFile(match[2], file.content, file.mode === undefined ? undefined : { mode: file.mode }));
       }
-      const dist = path.join(activeSession.root, 'dist');
-      try {
-        const current = await lstat(dist);
-        if (!current.isDirectory() || current.isSymbolicLink()) throw typedError('DESTINATION_PARENT_INVALID');
-      } catch (cause) {
-        if (cause?.code !== 'ENOENT') throw cause;
-        await filesystem.applyPlanAtomically(activeSession, ScaffoldPlan.empty(), 'dist', { signal: publishOptions?.signal });
+      async function ensureParents(destination) {
+        const segments = normalizeRelativePath(destination).slice(0, -1);
+        let relative = '';
+        for (const segment of segments) {
+          relative = relative === '' ? segment : `${relative}/${segment}`;
+          const target = path.join(activeSession.root, ...relative.split('/'));
+          try {
+            const current = await lstat(target);
+            if (!current.isDirectory() || current.isSymbolicLink()) throw typedError('DESTINATION_PARENT_INVALID');
+          } catch (cause) {
+            if (cause?.code !== 'ENOENT') throw cause;
+            await filesystem.applyPlanAtomically(activeSession, ScaffoldPlan.empty(), relative, { signal: publishOptions?.signal });
+          }
+        }
       }
-      return filesystem.applyPlanAtomically(activeSession, localePlan, 'dist/locales', { replace: true, signal: publishOptions?.signal });
+      await ensureParents('dist/locales');
+      const results = [await filesystem.applyPlanAtomically(activeSession, localePlan, 'dist/locales', { replace: true, signal: publishOptions?.signal })];
+      for (const [destination, testingPlan] of [...testingPlans.entries()].sort(([left], [right]) => left.localeCompare(right))) {
+        await ensureParents(destination);
+        results.push(await filesystem.applyPlanAtomically(activeSession, testingPlan, destination, { replace: true, signal: publishOptions?.signal }));
+      }
+      if (typeof publishOptions?.configName === 'string') {
+        const segments = [...normalizeRelativePath(publishOptions.configName)];
+        const fileName = segments.at(-1);
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:js|mjs)$/.test(fileName)) throw typedError('LOCALES_REQUEST_INVALID');
+        segments[segments.length - 1] = fileName.replace(/\.(?:js|mjs)$/, '');
+        const destination = `test/unit/${segments.join('/')}/locales`;
+        if (!testingPlans.has(destination)) {
+          try {
+            const current = await lstat(path.join(activeSession.root, ...destination.split('/')));
+            if (!current.isDirectory() || current.isSymbolicLink()) throw typedError('DESTINATION_PARENT_INVALID');
+            results.push(await filesystem.applyPlanAtomically(activeSession, ScaffoldPlan.empty(), destination, { replace: true, signal: publishOptions?.signal }));
+          } catch (cause) {
+            if (cause?.code !== 'ENOENT') throw cause;
+          }
+        }
+      }
+      return Object.freeze(results);
     }
   });
 
@@ -498,7 +534,7 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
         return generateAppLocales(Object.freeze({
           session,
           filesystem,
-          request: Object.freeze({ config: config.locales, ...localeSources, replaceOutput: true, signal: undefined }),
+          request: Object.freeze({ config: config.locales, configName: optionOf(parsed, 'config'), ...localeSources, replaceOutput: true, signal: undefined }),
           publisher: appLocalePublisher
         }));
       };
@@ -538,7 +574,7 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
       result = await generateAppLocales(Object.freeze({
         session,
         filesystem,
-        request: Object.freeze({ config: config.locales, ...localeSources, replaceOutput: true, signal: undefined }),
+        request: Object.freeze({ config: config.locales, configName: optionOf(parsed, 'config'), ...localeSources, replaceOutput: true, signal: undefined }),
         publisher: appLocalePublisher
       }));
     }
@@ -612,7 +648,7 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
       toolchain: tools.app,
       configName: optionOf(parsed, 'config'),
       options: Object.freeze({ sourceMap: boolOption(parsed, 'sourceMap'), sassLogLevel: optionOf(parsed, 'sassLogLevel') }),
-      localeRequest: Object.freeze({ ...localeSources }),
+      localeRequest: Object.freeze({ ...localeSources, configName: optionOf(parsed, 'config') }),
       serviceWorker: swConfig
     }));
     return asOutcome(result);

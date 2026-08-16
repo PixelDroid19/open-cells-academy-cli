@@ -71,7 +71,7 @@ function moduleSelectors(value) {
   if (!Array.isArray(value) || value.some(selector => typeof selector !== 'string' || !MODULE_SELECTOR.test(selector))) {
     throw typedError('LOCALES_CONFIG_INVALID', { field: 'appModules' });
   }
-  return Object.freeze([...new Set(value)].sort());
+  return Object.freeze([...new Set([...DEFAULT_MODULE_SELECTORS, ...value])].sort());
 }
 
 async function resolvedPackageRoot(sessionRoot, nodeModulesRoot, candidate) {

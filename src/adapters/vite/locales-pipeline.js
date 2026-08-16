@@ -132,6 +132,7 @@ function normalizeAppConfig(value) {
   const useBundles = value.useBundles ?? false;
   const config = {
     enabledI18n: value.enabledI18n ?? true,
+    forTesting: value.forTesting ?? false,
     intlFileName: value.intlFileName,
     intlFileVersion: value.intlFileVersion ?? 1,
     intlInputFileNames: normalizedInputFileNames(value.intlInputFileNames),
@@ -375,7 +376,29 @@ function planWithFile(plan, path, value) {
   return plan.addFile(path, stableJson(value));
 }
 
-function legacyPlan(locales, config) {
+function testingLocaleRoot(configName) {
+  if (typeof configName !== 'string') throw typedError('LOCALES_CONFIG_INVALID', { field: 'configName' });
+  const segments = [...normalizeRelativePath(configName)];
+  const fileName = segments.at(-1);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:js|mjs)$/.test(fileName)) {
+    throw typedError('LOCALES_CONFIG_INVALID', { field: 'configName' });
+  }
+  segments[segments.length - 1] = fileName.replace(/\.(?:js|mjs)$/, '');
+  return `test/unit/${segments.join('/')}/locales`;
+}
+
+function withTestingLocales(plan, config, configName) {
+  if (!config.forTesting) return plan;
+  const root = testingLocaleRoot(configName);
+  let output = plan;
+  for (const file of ScaffoldPlan.snapshot(plan).files) {
+    if (!file.path.startsWith('dist/locales/')) continue;
+    output = output.addFile(`${root}/${file.path.slice('dist/locales/'.length)}`, file.content, file.mode === undefined ? undefined : { mode: file.mode });
+  }
+  return output;
+}
+
+function legacyPlan(locales, config, configName) {
   let plan = ScaffoldPlan.empty();
   if (locales.size === 0) {
     return plan;
@@ -388,7 +411,7 @@ function legacyPlan(locales, config) {
   if (config.intlFileName !== undefined) {
     plan = planWithFile(plan, `dist/locales/${config.intlFileName}.json`, combinedPayload(locales, config.intlFileVersion));
   }
-  return plan;
+  return withTestingLocales(plan, config, configName);
 }
 
 function normalizedPageEntries(value) {
@@ -505,7 +528,7 @@ function mergeForBundle(paths, pageSources, pageNames, sourceByPath, appLocales,
   return merged;
 }
 
-async function bundlePlan(session, filesystem, config, appSources, entries, modules) {
+async function bundlePlan(session, filesystem, config, appSources, entries, modules, configName) {
   if (config.initialPages.some(page => !entries.some(entry => entry.page === page))) {
     throw typedError('LOCALES_CONFIG_INVALID', { field: 'initialPages' });
   }
@@ -539,7 +562,7 @@ async function bundlePlan(session, filesystem, config, appSources, entries, modu
       );
     }
   }
-  return plan;
+  return withTestingLocales(plan, config, configName);
 }
 
 function assertFrozenDependencyNode(node) {
@@ -586,7 +609,7 @@ export async function planAppLocales({ session, filesystem, request }) {
   if (request.config === undefined) {
     return ScaffoldPlan.empty();
   }
-  const allowed = new Set(['config', 'componentLocaleFiles', 'appLocaleFiles', 'pageEntries', 'pageModules', 'replaceOutput', 'signal']);
+  const allowed = new Set(['config', 'configName', 'componentLocaleFiles', 'appLocaleFiles', 'pageEntries', 'pageModules', 'replaceOutput', 'signal']);
   if (request.replaceOutput !== undefined && typeof request.replaceOutput !== 'boolean') {
     throw typedError('LOCALES_REQUEST_INVALID');
   }
@@ -604,11 +627,11 @@ export async function planAppLocales({ session, filesystem, request }) {
     : undefined;
   const appSources = await readRequiredSources(session, filesystem, appPaths);
   if (config.useBundles) {
-    return bundlePlan(session, filesystem, config, appSources, bundle.entries, bundle.modules);
+    return bundlePlan(session, filesystem, config, appSources, bundle.entries, bundle.modules, request.configName);
   }
   const componentSources = await readRequiredSources(session, filesystem, componentPaths);
   const merged = overlayBaseAndVariants(mergeSources(componentSources), mergeSources(appSources), config.languages);
-  return legacyPlan(nonEmptyLanguages(merged), config);
+  return legacyPlan(nonEmptyLanguages(merged), config, request.configName);
 }
 
 /**

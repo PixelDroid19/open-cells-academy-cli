@@ -172,17 +172,22 @@ test('break: a per-language locale configuration does not add an implicit combin
   const plan = await generateAppLocales(
     appContext(session, filesystem, {
       config: { enabledI18n: true, forTesting: true, languages: ['en'] },
+      configName: 'market/web-dev.js',
       componentLocaleFiles: ['components/button/locales/en.json']
     })
   );
 
-  assert.deepEqual(Object.keys(filesIn(plan)), ['dist/locales/en.json']);
+  assert.deepEqual(Object.keys(filesIn(plan)), [
+    'dist/locales/en.json',
+    'test/unit/market/web-dev/locales/en.json'
+  ]);
 });
 
 test('break: established locale discovery includes configured Cells scopes, excludes unrelated packages, and resolves pnpm links safely', async t => {
   const { root } = await workspace(t);
   await writeWorkspaceFile(root, 'node_modules/axe-core/locales/en.json', '{"leaked":"third-party"}\n');
-  await writeWorkspaceFile(root, 'node_modules/@cells/direct/locales/en.json', '{"direct":"Cells"}\n');
+  await writeWorkspaceFile(root, 'node_modules/@cells/core/locales/en.json', '{"core":"Cells"}\n');
+  await writeWorkspaceFile(root, 'node_modules/@cells-demo/direct/locales/en.json', '{"direct":"Cells"}\n');
   const pnpmPackage = 'node_modules/.pnpm/@cells+linked@1.0.0/node_modules/@cells/linked';
   await writeWorkspaceFile(root, `${pnpmPackage}/locales/en.json`, '{"linked":"Cells"}\n');
   await mkdir(path.join(root, 'node_modules', '@cells'), { recursive: true });
@@ -192,11 +197,12 @@ test('break: established locale discovery includes configured Cells scopes, excl
     'dir'
   );
 
-  const sources = await discoverAppLocaleSources(root, { intlInputFileNames: ['locales'] }, ['@cells']);
+  const sources = await discoverAppLocaleSources(root, { intlInputFileNames: ['locales'] }, ['@cells-demo']);
 
   assert.deepEqual(sources.componentLocaleFiles, [
     'node_modules/.pnpm/@cells+linked@1.0.0/node_modules/@cells/linked/locales/en.json',
-    'node_modules/@cells/direct/locales/en.json'
+    'node_modules/@cells-demo/direct/locales/en.json',
+    'node_modules/@cells/core/locales/en.json'
   ]);
   assert.equal(sources.componentLocaleFiles.some(file => file.includes('axe-core')), false);
 });

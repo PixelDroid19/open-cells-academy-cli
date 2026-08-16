@@ -366,7 +366,8 @@ test('contract: app:test detects a declared WTR project while explicit --no-wtr 
   await mkdir(path.join(root, 'test', 'unit'), { recursive: true });
   await writeFile(path.join(root, 'test', 'unit', 'a.test.js'), 'it("passes", () => {});\n');
   await mkdir(path.join(root, 'node_modules', '@web', 'test-runner-playwright'), { recursive: true });
-  await writeFile(path.join(root, 'node_modules', '@web', 'test-runner-playwright', 'package.json'), '{"name":"@web/test-runner-playwright","version":"0.0.0"}\n');
+  await writeFile(path.join(root, 'node_modules', '@web', 'test-runner-playwright', 'package.json'), '{"name":"@web/test-runner-playwright","version":"0.0.0","type":"module","main":"index.mjs"}\n');
+  await writeFile(path.join(root, 'node_modules', '@web', 'test-runner-playwright', 'index.mjs'), 'export function playwrightLauncher() {}\n');
   const api = createFakeToolApi({ testing: { exitCode: 0 } });
   const requests = [];
   const runProcess = api.testing.runProcess.bind(api.testing);
@@ -428,7 +429,7 @@ test('contract: app:locales supports established locales-app sources and intlInp
   await writeFile(path.join(root, 'app', 'index.html'), '<main></main>\n');
   await writeFile(
     path.join(root, 'app', 'config', 'market.js'),
-    'export default { locales: { enabledI18n: true, languages: ["en", "en-US", "es"], intlInputFileNames: ["locales"], intlFileName: "locales" } };\n'
+    'export default { locales: { enabledI18n: true, forTesting: true, languages: ["en", "en-US", "es"], intlInputFileNames: ["locales"], intlFileName: "locales" } };\n'
   );
   await mkdir(path.join(root, 'app', 'locales-app'), { recursive: true });
   await writeFile(path.join(root, 'app', 'locales-app', 'en.json'), '{"hello":"Hello","shared":"application"}\n');
@@ -455,6 +456,18 @@ test('contract: app:locales supports established locales-app sources and intlInp
     'en-US': { componentOnly: 'Card', hello: 'Hello', shared: 'application' },
     es: { hello: 'Hola' }
   });
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(root, 'test', 'unit', 'market', 'locales', 'en.json'), 'utf8')),
+    { componentOnly: 'Card', hello: 'Hello', shared: 'application' }
+  );
+
+  await writeFile(
+    path.join(root, 'app', 'config', 'market.js'),
+    'export default { locales: { enabledI18n: true, forTesting: false, languages: ["en"], intlInputFileNames: ["locales"] } };\n'
+  );
+  const withoutTesting = await cli.run(['app:locales', '--config', 'market.js'], { env: {} });
+  assert.equal(withoutTesting.exitCode, 0, withoutTesting.stderr);
+  assert.deepEqual(await readdir(path.join(root, 'test', 'unit', 'market', 'locales')), []);
 });
 
 test('contract: app:locales atomically removes stale catalogs when the selected profile disables i18n', async t => {

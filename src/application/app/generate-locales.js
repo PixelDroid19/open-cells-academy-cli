@@ -26,7 +26,11 @@ export async function generateAppLocales(context) {
   assertContext(context);
   const plan = await planAppLocales(context);
   if ((plan.files.length > 0 || context.request.replaceOutput === true) && context.publisher !== undefined) {
-    await context.publisher.publish(context.session, plan, { signal: context.request.signal });
+    await context.publisher.publish(context.session, plan, {
+      signal: context.request.signal,
+      configName: context.request.configName,
+      forTesting: context.request.config?.forTesting === true
+    });
   }
   return plan;
 }
