@@ -417,6 +417,31 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
         const current = testingPlans.get(match[1]) ?? ScaffoldPlan.empty();
         testingPlans.set(match[1], current.addFile(match[2], file.content, file.mode === undefined ? undefined : { mode: file.mode }));
       }
+      if (typeof publishOptions?.bundlePagesRoot === 'string') {
+        const rootSegments = normalizeRelativePath(publishOptions.bundlePagesRoot);
+        if (rootSegments[0] !== 'dist' || rootSegments.length < 2) throw typedError('LOCALES_REQUEST_INVALID');
+        const relativeRoot = rootSegments.join('/');
+        const absoluteRoot = path.join(activeSession.root, ...rootSegments);
+        try {
+          const rootStatus = await lstat(absoluteRoot);
+          if (!rootStatus.isDirectory() || rootStatus.isSymbolicLink()) throw typedError('DESTINATION_PARENT_INVALID');
+          const entries = await readdir(absoluteRoot, { withFileTypes: true });
+          for (const entry of entries) {
+            if (!entry.name.endsWith('-page')) continue;
+            if (!entry.isDirectory() || entry.isSymbolicLink()) throw typedError('DESTINATION_PARENT_INVALID');
+            const destination = `${relativeRoot}/${entry.name}/locales`;
+            try {
+              const current = await lstat(path.join(activeSession.root, ...destination.split('/')));
+              if (!current.isDirectory() || current.isSymbolicLink()) throw typedError('DESTINATION_PARENT_INVALID');
+              if (!testingPlans.has(destination)) testingPlans.set(destination, ScaffoldPlan.empty());
+            } catch (cause) {
+              if (cause?.code !== 'ENOENT') throw cause;
+            }
+          }
+        } catch (cause) {
+          if (cause?.code !== 'ENOENT') throw cause;
+        }
+      }
       async function ensureParents(destination) {
         const segments = normalizeRelativePath(destination).slice(0, -1);
         let relative = '';

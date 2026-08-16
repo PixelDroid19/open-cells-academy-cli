@@ -29,7 +29,10 @@ export async function generateAppLocales(context) {
     await context.publisher.publish(context.session, plan, {
       signal: context.request.signal,
       configName: context.request.configName,
-      forTesting: context.request.config?.forTesting === true
+      forTesting: context.request.config?.forTesting === true,
+      bundlePagesRoot: context.request.config?.useBundles === true
+        ? `dist/${context.request.config.pagesPath ?? 'pages'}`
+        : undefined
     });
   }
   return plan;

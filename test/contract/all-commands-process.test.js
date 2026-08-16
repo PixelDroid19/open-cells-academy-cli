@@ -524,6 +524,25 @@ test('contract: app:locales publishes configured page bundles through the CLI', 
   assert.deepEqual(JSON.parse(await readFile(path.join(root, 'dist', 'pages', 'about-page', 'locales', 'locales.json'), 'utf8')), {
     en: { about: 'About' }
   });
+
+  await writeFile(
+    path.join(root, 'app', 'config', 'bundle.js'),
+    `export default { locales: {
+      enabledI18n: true,
+      useBundles: true,
+      languages: ['en'],
+      intlFileName: 'locales',
+      initialBundle: ['home'],
+      pageEntries: { home: 'home-page' },
+      pageModules: {
+        'home-page': { imports: [], localeFiles: ['app/pages/home-page/locales/locales.json'] }
+      }
+    } };\n`
+  );
+  const updated = await registryFor(dispatch).run(['app:locales', '--config', 'bundle.js'], { env: {} });
+
+  assert.equal(updated.exitCode, 0, updated.stderr);
+  assert.deepEqual(await readdir(path.join(root, 'dist', 'pages', 'about-page', 'locales')), []);
 });
 
 test('contract: dev/build/preview/component:dev/component:build:demo dispatch to the toolchains (tools present)', async t => {
