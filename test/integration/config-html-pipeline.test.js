@@ -126,7 +126,11 @@ test('integration: ESM config reload evaluates a fresh contained dependency grap
   const { root, session } = await fixture(t);
   await mkdir(path.join(root, 'app', 'config', 'market'), { recursive: true });
   await writeFile(path.join(root, 'app', 'config', 'market', 'dev.js'), 'export default { environment: "de" };\n');
-  await writeFile(path.join(root, 'app', 'config', 'market', 'vbank.js'), 'import dev from "./dev.js"; export default { ...dev, profile: "vbank" };\n');
+  await writeFile(path.join(root, 'app', 'config', 'market', 'lazy.js'), 'export default { lazy: true };\n');
+  await writeFile(
+    path.join(root, 'app', 'config', 'market', 'vbank.js'),
+    '// import "./removed-comment.js";\nconst example = "import \'./removed-string.js\'";\nif (false) import(`./lazy.js`);\nimport dev from "./dev.js"; export default { ...dev, profile: "vbank", example };\n'
+  );
 
   const first = await loadCellsConfig(session, 'market/vbank.js');
   await writeFile(path.join(root, 'app', 'config', 'market', 'dev.js'), 'export default { environment: "qa" };\n');
@@ -136,6 +140,7 @@ test('integration: ESM config reload evaluates a fresh contained dependency grap
   assert.equal(second.legacy.environment, 'qa');
   assert.deepEqual(second.sourceDependencies, [
     'app/config/market/dev.js',
+    'app/config/market/lazy.js',
     'app/config/market/vbank.js'
   ]);
 });

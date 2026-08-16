@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { Worker } from 'node:worker_threads';
+import { init as initEsmLexer, parse as parseEsm } from 'es-module-lexer';
 
 import { normalizeRelativePath } from '../../domain/path-policy.js';
 import { typedError } from '../../domain/workspace-session.js';
@@ -320,9 +321,8 @@ async function commonJsConfig(session, file, sourcePath) {
   }
 }
 
-const ESM_IMPORT = /(?:\bimport\s*(?:[^'";]*?\sfrom\s*)?|\bexport\s+[^'";]*?\sfrom\s*|\bimport\s*\()(["'])(\.\.?\/[^"']+)\1/gu;
-
 async function esmDependencyGraph(session, file, sourcePath) {
+  await initEsmLexer;
   const pending = [file.canonicalFile];
   const visited = new Set();
   while (pending.length > 0) {
@@ -340,8 +340,21 @@ async function esmDependencyGraph(session, file, sourcePath) {
     } catch (cause) {
       throw invalidConfig(sourcePath);
     }
-    for (const match of source.matchAll(ESM_IMPORT)) {
-      const specifier = match[2].split(/[?#]/, 1)[0];
+    let imports;
+    try {
+      [imports] = parseEsm(source);
+    } catch (cause) {
+      throw invalidConfig(sourcePath);
+    }
+    for (const entry of imports) {
+      const raw = source.slice(entry.s, entry.e);
+      const imported = typeof entry.n === 'string'
+        ? entry.n
+        : entry.d >= 0 && raw.startsWith('`') && raw.endsWith('`') && !raw.includes('${') && !raw.includes('\\')
+          ? raw.slice(1, -1)
+          : undefined;
+      if (typeof imported !== 'string' || (!imported.startsWith('./') && !imported.startsWith('../'))) continue;
+      const specifier = imported.split(/[?#]/, 1)[0];
       let dependency = path.resolve(path.dirname(candidate), specifier);
       if (path.extname(dependency) === '') dependency += '.js';
       if (!within(file.canonicalDirectory, dependency)) throw invalidConfig(sourcePath);
