@@ -3,6 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
+import { Worker } from 'node:worker_threads';
 
 import { normalizeRelativePath } from '../../domain/path-policy.js';
 import { typedError } from '../../domain/workspace-session.js';
@@ -319,6 +320,70 @@ async function commonJsConfig(session, file, sourcePath) {
   }
 }
 
+const ESM_IMPORT = /(?:\bimport\s*(?:[^'";]*?\sfrom\s*)?|\bexport\s+[^'";]*?\sfrom\s*|\bimport\s*\()(["'])(\.\.?\/[^"']+)\1/gu;
+
+async function esmDependencyGraph(session, file, sourcePath) {
+  const pending = [file.canonicalFile];
+  const visited = new Set();
+  while (pending.length > 0) {
+    const candidate = pending.pop();
+    if (visited.has(candidate)) continue;
+    visited.add(candidate);
+    let source;
+    try {
+      const current = await lstat(candidate);
+      const canonical = await realpath(candidate);
+      if (!current.isFile() || current.isSymbolicLink() || canonical !== candidate || !within(file.canonicalDirectory, canonical)) {
+        throw new TypeError('Invalid ESM config dependency');
+      }
+      source = await readFile(canonical, 'utf8');
+    } catch (cause) {
+      throw invalidConfig(sourcePath);
+    }
+    for (const match of source.matchAll(ESM_IMPORT)) {
+      const specifier = match[2].split(/[?#]/, 1)[0];
+      let dependency = path.resolve(path.dirname(candidate), specifier);
+      if (path.extname(dependency) === '') dependency += '.js';
+      if (!within(file.canonicalDirectory, dependency)) throw invalidConfig(sourcePath);
+      pending.push(dependency);
+    }
+  }
+  return Object.freeze([...visited]
+    .map(dependency => path.relative(session.root, dependency).split(path.sep).join('/'))
+    .sort());
+}
+
+async function evaluateEsmConfig(file, sourcePath) {
+  const workerSource = `
+    const { parentPort, workerData } = require('node:worker_threads');
+    import(workerData.url).then(
+      module => parentPort.postMessage({ ok: true, value: module.default }),
+      () => parentPort.postMessage({ ok: false })
+    );
+  `;
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(workerSource, {
+      eval: true,
+      workerData: { url: pathToFileURL(file.canonicalFile).href }
+    });
+    let settled = false;
+    const finish = (operation, value) => {
+      if (settled) return;
+      settled = true;
+      void worker.terminate();
+      operation(value);
+    };
+    worker.once('message', message => {
+      if (message?.ok === true) finish(resolve, message.value);
+      else finish(reject, invalidConfig(sourcePath));
+    });
+    worker.once('error', () => finish(reject, invalidConfig(sourcePath)));
+    worker.once('exit', code => {
+      if (!settled && code !== 0) finish(reject, invalidConfig(sourcePath));
+    });
+  });
+}
+
 /**
  * Loads a trusted project configuration module. Config execution is not
  * sandboxed: import/evaluation failures are reported as trusted project
@@ -337,8 +402,8 @@ export async function loadCellsConfig(session, configName) {
       ? await commonJsConfig(session, file, sourcePath)
       : undefined;
     if (commonJs === undefined) {
-      const imported = await import(`${pathToFileURL(file.canonicalFile).href}?academyConfig=${encodeURIComponent(cacheToken)}`);
-      defaultExport = imported.default;
+      dependencies = await esmDependencyGraph(session, file, sourcePath);
+      defaultExport = await evaluateEsmConfig(file, sourcePath);
     } else {
       defaultExport = commonJs.defaultExport;
       dependencies = commonJs.dependencies;

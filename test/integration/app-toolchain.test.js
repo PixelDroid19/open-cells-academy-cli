@@ -408,6 +408,33 @@ test('red: legacy runtime watches and reloads a changed CommonJS base configurat
   assert.match(bootstrap.code, /"environment":"qa"/);
 });
 
+test('red: legacy runtime watches and reloads a changed ESM base configuration', async t => {
+  const { root, session } = await workspace(t);
+  await writeWorkspaceFile(root, 'app/index.html', '<main></main>\n');
+  await writeWorkspaceFile(root, 'app/scripts/app-bootstrap.js', '(function () { window.AppConfig = {}; }());\n');
+  await writeConfig(root, 'market/dev.js', 'export default { environment: "de" };\n');
+  await writeConfig(root, 'market/vbank.js', 'import dev from "./dev.js"; export default { ...dev, profile: "vbank" };\n');
+  const initial = await loadCellsConfig(session, 'market/vbank.js');
+  const { createLegacyAppPlugins } = await import('../../src/adapters/vite/legacy-app-runtime.js');
+  const plugin = (await createLegacyAppPlugins(Object.freeze({ session, configName: 'market/vbank.js', config: initial })))
+    .find(candidate => candidate.name === 'open-cells-legacy-config');
+  const watched = [];
+  const server = {
+    watcher: { add(paths) { watched.push(...paths); } },
+    ws: { send() {} },
+    moduleGraph: { getModuleById() { return undefined; }, invalidateModule() {} }
+  };
+  plugin.configureServer(server);
+  const dependency = path.join(root, 'app', 'config', 'market', 'dev.js');
+  await writeFile(dependency, 'export default { environment: "qa" };\n');
+
+  await plugin.handleHotUpdate({ file: dependency, server });
+  const bootstrap = await plugin.transform('(function () { window.AppConfig = {}; }());\n', path.join(root, 'app', 'scripts', 'app-bootstrap.js'));
+
+  assert.equal(watched.includes(dependency), true);
+  assert.match(bootstrap.code, /"environment":"qa"/);
+});
+
 test('red: legacy runtime rejects an app directory replaced before an HMR recapture', async t => {
   const { root, session } = await workspace(t);
   const outside = await mkdtemp(path.join(os.tmpdir(), 'open-cells-external-app-'));

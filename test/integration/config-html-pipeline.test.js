@@ -122,6 +122,24 @@ test('integration: CommonJS config reload invalidates contained dependencies and
   assert.equal(Object.isFrozen(second.sourceDependencies), true);
 });
 
+test('integration: ESM config reload evaluates a fresh contained dependency graph', async t => {
+  const { root, session } = await fixture(t);
+  await mkdir(path.join(root, 'app', 'config', 'market'), { recursive: true });
+  await writeFile(path.join(root, 'app', 'config', 'market', 'dev.js'), 'export default { environment: "de" };\n');
+  await writeFile(path.join(root, 'app', 'config', 'market', 'vbank.js'), 'import dev from "./dev.js"; export default { ...dev, profile: "vbank" };\n');
+
+  const first = await loadCellsConfig(session, 'market/vbank.js');
+  await writeFile(path.join(root, 'app', 'config', 'market', 'dev.js'), 'export default { environment: "qa" };\n');
+  const second = await loadCellsConfig(session, 'market/vbank.js');
+
+  assert.equal(first.legacy.environment, 'de');
+  assert.equal(second.legacy.environment, 'qa');
+  assert.deepEqual(second.sourceDependencies, [
+    'app/config/market/dev.js',
+    'app/config/market/vbank.js'
+  ]);
+});
+
 test('break: nested config directory symlinks and traversal remain outside the trusted boundary', async t => {
   const { root, session } = await fixture(t);
   await mkdir(path.join(root, 'app', 'config', 'real-market'));
