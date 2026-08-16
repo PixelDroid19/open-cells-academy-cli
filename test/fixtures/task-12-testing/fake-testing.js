@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const JUNIT = '<?xml version="1.0" encoding="UTF-8"?><testsuites><testsuite name="fake" tests="1" failures="0"><testcase name="fake" classname="fake"/></testsuite></testsuites>\n';
@@ -15,7 +15,8 @@ export function createFakeTestToolchain({ mode = 'green', interrupt = false } = 
     vitestCalls: 0,
     vitestLast: undefined,
     wtrCalls: 0,
-    wtrLast: undefined
+    wtrLast: undefined,
+    wtrConfigSource: undefined
   };
 
   function coverageDir(cwd) {
@@ -56,6 +57,9 @@ export function createFakeTestToolchain({ mode = 'green', interrupt = false } = 
     get wtrLast() {
       return state.wtrLast;
     },
+    get wtrConfigSource() {
+      return state.wtrConfigSource;
+    },
     async runProcess(request) {
       const isVitest = String(request.file).includes('vitest') || request.args.some(arg => arg.includes('vitest'));
       if (isVitest) {
@@ -64,6 +68,10 @@ export function createFakeTestToolchain({ mode = 'green', interrupt = false } = 
       } else {
         state.wtrCalls += 1;
         state.wtrLast = Object.freeze({ ...request });
+        const configIndex = request.args.indexOf('--config');
+        if (configIndex >= 0) {
+          state.wtrConfigSource = await readFile(path.resolve(request.cwd, request.args[configIndex + 1]), 'utf8');
+        }
       }
       if (interrupt) {
         if (request.signal?.aborted === true) {

@@ -1,9 +1,9 @@
-import { access, constants as fsConstants, mkdir, writeFile } from 'node:fs/promises';
+import { access, constants as fsConstants, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { typedError } from '../../domain/workspace-session.js';
-import { discoverProjectTestFiles } from './test-files.js';
+import { captureProjectTestFiles } from './test-files.js';
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -97,9 +97,11 @@ export class WtrRunner {
   async run(request) {
     assertRequest(request);
     const cwd = request.session.root;
-    const testFiles = await discoverProjectTestFiles(cwd);
+    const capturedTests = await captureProjectTestFiles(cwd);
+    const testFiles = capturedTests.files;
     if (testFiles.length === 0) return Object.freeze({ ok: false, code: 'TEST_NO_TESTS', params: Object.freeze({}) });
-    const configPath = path.join(cwd, 'wtr.academy.config.mjs');
+    let configPath;
+    let temporaryDirectory;
     const launcherSpecifier = (await projectHasPackage(cwd, '@web/test-runner-playwright'))
       ? '@web/test-runner-playwright'
       : this.#launcherEntry === undefined
@@ -113,28 +115,47 @@ export class WtrRunner {
         : pathToFileURL(this.#junitEntry).href;
     try {
       await mkdir(path.join(cwd, 'test', 'coverage'), { recursive: true });
-      await writeFile(configPath, configSource(launcherSpecifier, request.browserExecutable, junitSpecifier, testFiles));
+      const source = configSource(launcherSpecifier, request.browserExecutable, junitSpecifier, testFiles);
+      temporaryDirectory = await mkdtemp(path.join(cwd, 'test', 'coverage', '.open-cells-wtr-'));
+      configPath = path.join(temporaryDirectory, 'config.mjs');
+      await writeFile(configPath, source, { flag: 'wx', mode: 0o600 });
     } catch (cause) {
       throw typedError('TEST_ARTIFACT_FAILED', undefined, cause);
     }
-    const args = ['--config', 'wtr.academy.config.mjs'];
+    const configArgument = path.relative(cwd, configPath).split(path.sep).join('/');
+    const args = ['--config', configArgument];
     if (request.watch === true) args.push('--watch');
     if (request.updateSnapshots === true) args.push('--update-snapshots');
     if (request.coverage === true) args.push('--coverage');
+    let operationFailure;
+    let result;
     try {
-      const result = await this.#process.runProcess(Object.freeze({
+      result = await this.#process.runProcess(Object.freeze({
         file: this.#wtrExecutable,
         args: Object.freeze(args),
         cwd,
         env: request.env ?? Object.freeze({}),
         signal: request.signal,
-        timeoutMs: request.timeoutMs
+        timeoutMs: request.timeoutMs,
+        beforeSpawn: capturedTests.verify
       }));
       if (!isRecord(result)) throw typedError('TEST_TOOL_FAILED');
-      return outcome(result);
     } catch (cause) {
-      if (cause?.code === 'TEST_FAILED' || cause?.code === 'INTERRUPTED' || cause?.code === 'TEST_NO_TESTS') throw cause;
-      throw typedError('TEST_TOOL_FAILED', undefined, cause);
+      operationFailure = cause;
     }
+    let cleanupFailure;
+    if (temporaryDirectory !== undefined) {
+      try {
+        await rm(temporaryDirectory, { recursive: true, force: true });
+      } catch (cause) {
+        cleanupFailure = cause;
+      }
+    }
+    if (operationFailure !== undefined) {
+      if (operationFailure?.code === 'TEST_FAILED' || operationFailure?.code === 'INTERRUPTED' || operationFailure?.code === 'TEST_NO_TESTS') throw operationFailure;
+      throw typedError('TEST_TOOL_FAILED', undefined, operationFailure);
+    }
+    if (cleanupFailure !== undefined) throw typedError('TEST_ARTIFACT_FAILED', undefined, cleanupFailure);
+    return outcome(result);
   }
 }

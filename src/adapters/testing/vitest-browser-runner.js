@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { typedError } from '../../domain/workspace-session.js';
-import { discoverProjectTestFiles } from './test-files.js';
+import { captureProjectTestFiles } from './test-files.js';
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -59,7 +59,8 @@ export class VitestBrowserRunner {
 
   async run(request) {
     assertRequest(request);
-    const testFiles = await discoverProjectTestFiles(request.session.root);
+    const capturedTests = await captureProjectTestFiles(request.session.root);
+    const testFiles = capturedTests.files;
     if (testFiles.length === 0) return Object.freeze({ ok: false, code: 'TEST_NO_TESTS', params: Object.freeze({}) });
     const args = request.watch === true ? ['watch', ...testFiles] : ['run', ...testFiles];
     if (request.updateSnapshots === true) args.push('--update');
@@ -77,7 +78,8 @@ export class VitestBrowserRunner {
         cwd,
         env: request.env ?? Object.freeze({}),
         signal: request.signal,
-        timeoutMs: request.timeoutMs
+        timeoutMs: request.timeoutMs,
+        beforeSpawn: capturedTests.verify
       }));
       if (!isRecord(result)) throw typedError('TEST_TOOL_FAILED');
       return outcome(result, request);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -85,6 +85,33 @@ test('red: a legacy app without project-owned unit files reports TEST_NO_TESTS w
   assert.equal(fake.vitestCalls, 0);
 });
 
+test('red: test launch revalidates captured test ancestors immediately before spawning the runner', async t => {
+  const { root, session } = await workspace(t);
+  const outside = await mkdtemp(path.join(os.tmpdir(), 'open-cells-external-tests-'));
+  t.after(() => rm(outside, { recursive: true, force: true }));
+  await writeWorkspaceFile(root, 'test/unit/owned.test.js', 'it("owned", () => {});\n');
+  await writeFile(path.join(outside, 'owned.test.js'), 'throw new Error("external test executed");\n');
+  let beforeSpawnCalled = false;
+  const process = Object.freeze({
+    async runProcess(request) {
+      await rename(path.join(root, 'test'), path.join(root, 'test-owned'));
+      await symlink(outside, path.join(root, 'test'), 'dir');
+      if (typeof request.beforeSpawn !== 'function') {
+        return Object.freeze({ exitCode: 0, stdout: 'Test Files  1 passed (1)\n', stderr: '' });
+      }
+      beforeSpawnCalled = true;
+      await request.beforeSpawn();
+      assert.fail('the runner must not spawn after a test ancestor replacement');
+    }
+  });
+
+  await assertCode(
+    new VitestBrowserRunner(process).run(Object.freeze({ session })),
+    'TEST_TOOL_FAILED'
+  );
+  assert.equal(beforeSpawnCalled, true);
+});
+
 test('red: test project fails on assertion, import, unhandled-error, and no-test runs with real exit codes', async t => {
   const { root, session } = await workspace(t);
   const filesystem = new NodeFilesystem();
@@ -135,7 +162,7 @@ test('red: test project supports WTR as the compatibility runner and a custom cw
   assert.equal(outcome.ok, true);
   assert.equal(fake.wtrLast.cwd, root);
   assert.equal(fake.wtrLast.args.includes('--config'), true);
-  const config = await readFile(path.join(root, 'wtr.academy.config.mjs'), 'utf8');
+  const config = fake.wtrConfigSource;
   assert.match(config, /nodeResolve:\s*true/);
   assert.match(config, /ui:\s*'tdd'/);
   assert.match(config, new RegExp(`junitReporter\\(\\{ outputPath: 'test/coverage/junit-report.xml' \\}\\)`));
@@ -162,14 +189,34 @@ test('red: WTR coverage requests reach the Web Test Runner executable', async t 
   assert.equal(fake.wtrLast.args.includes('--coverage'), true);
 });
 
+test('red: WTR preserves a caller-owned config and removes its private temporary config', async t => {
+  const { root, session } = await workspace(t);
+  await writeWorkspaceFile(root, 'test/a.test.js', 'it("passes", () => {});\n');
+  await writeWorkspaceFile(root, 'wtr.academy.config.mjs', 'export default { callerOwned: true };\n');
+  const fake = createFakeTestToolchain();
+  const runner = new WtrRunner(
+    fake,
+    'web-test-runner',
+    path.join(root, 'cli-launcher', 'index.mjs'),
+    path.join(root, 'cli-junit', 'index.mjs')
+  );
+
+  const result = await testProject(testContext(session, runner, { wtr: true }));
+
+  assert.equal(result.ok, true);
+  assert.equal(await readFile(path.join(root, 'wtr.academy.config.mjs'), 'utf8'), 'export default { callerOwned: true };\n');
+  assert.equal((await readdir(path.join(root, 'test', 'coverage'))).some(name => name.startsWith('.open-cells-wtr-')), false);
+});
+
 test('red: test project prefers the project launcher and reports a missing launcher as a typed failure', async t => {
   const { root, session } = await workspace(t);
   await writeWorkspaceFile(root, 'test/a.test.js', 'it("passes", () => {});\n');
   await writeWorkspaceFile(root, path.join('node_modules', '@web', 'test-runner-playwright', 'package.json'), '{"name":"@web/test-runner-playwright","version":"0.0.0"}\n');
-  const withProjectLauncher = new WtrRunner(createFakeTestToolchain(), 'web-test-runner');
+  const projectFake = createFakeTestToolchain();
+  const withProjectLauncher = new WtrRunner(projectFake, 'web-test-runner');
   const projectOutcome = await testProject(testContext(session, withProjectLauncher, { wtr: true }));
   assert.equal(projectOutcome.ok, true);
-  const config = await readFile(path.join(root, 'wtr.academy.config.mjs'), 'utf8');
+  const config = projectFake.wtrConfigSource;
   assert.match(config, /from\s+'@web\/test-runner-playwright'/);
 
   const withoutLauncher = new WtrRunner(createFakeTestToolchain(), 'web-test-runner');

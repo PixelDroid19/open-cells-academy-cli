@@ -106,6 +106,7 @@ function validateRequest(request, defaults) {
     terminateGraceMs,
     outputLimitBytes: requireMilliseconds(request.outputLimitBytes, 'outputLimitBytes', defaults.outputLimitBytes),
     isServer: request.isServer === true,
+    beforeSpawn: optionalCallback(request.beforeSpawn, 'beforeSpawn'),
     onStart: optionalCallback(request.onStart, 'onStart'),
     onOutput: optionalCallback(request.onOutput, 'onOutput')
   });
@@ -322,6 +323,7 @@ export class NodeProcessRunner extends ProcessPort {
       }
       throw typedError('TOOL_FAILED', { reason: 'CWD_INVALID' }, cause);
     }
+    if (prepared.beforeSpawn !== undefined) await prepared.beforeSpawn();
 
     return new Promise((resolve, reject) => {
       const startedAt = performance.now();
