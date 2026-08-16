@@ -25,7 +25,7 @@ async function fixture(t) {
   await write(root, 'app/index.html', '<main>stale</main>\n');
   await write(root, 'app/tpls/index.tpl', '<!doctype html><html lang="##lang##"><body data-label="##label##"><script src="/scripts/vendor/runtime.js"></script><script type="module" src="/scripts/app-bootstrap.js"></script></body></html>\n');
   await write(root, 'app/scripts/app-bootstrap.js', '(function () { window.AppConfig = {}; window.__runtimeEnvironment = window.AppConfig.environment; }());\n');
-  await write(root, 'app/scripts/vendor/runtime.js', 'window.__legacyVendorLoaded = true;\n');
+  await write(root, 'app/scripts/vendor/runtime.js', 'window.__legacyVendorLoaded = true;\nwindow.__sourceMapText = "//# sourceMappingURL=kept.js.map";\n//# sourceMappingURL=runtime.js.map\n');
   await write(root, 'app/config/market/dev.js', 'export default { lang: "es", label: "DEV", environment: "de" };\n');
   await write(root, 'app/config/market/qa.js', 'export default { lang: "es", label: "QA", environment: "qa" };\n');
   const session = await WorkspaceSession.open(root, new NodeFilesystem());
@@ -69,6 +69,10 @@ test('integration: real Vite serves distinct legacy DEV and QA profiles without 
   assert.equal((await fetch(dev.url)).status, 200);
   assert.equal((await fetch(new URL('@vite/client', dev.url))).status, 200);
   assert.match(await (await fetch(dev.url)).text(), /data-label="DEV"/);
+  const runtimeSource = await (await fetch(new URL('scripts/vendor/runtime.js', dev.url))).text();
+  assert.match(runtimeSource, /window\.__legacyVendorLoaded = true/);
+  assert.match(runtimeSource, /sourceMappingURL=kept\.js\.map/);
+  assert.doesNotMatch(runtimeSource, /sourceMappingURL=runtime\.js\.map/);
   assert.equal((await runtimeConfig(dev.url)).environment, 'de');
 
   await write(root, 'app/config/market/dev.js', 'export default { lang: "es", label: "DEV", environment: "de-live" };\n');
@@ -105,7 +109,7 @@ test('integration: real Vite build consumes the rendered legacy HTML before emit
   const html = await readFile(path.join(result.destination, 'index.html'), 'utf8');
   assert.match(html, /(?:src|href)="\.\/assets\//);
   assert.match(html, /scripts\/vendor\/runtime\.js/);
-  assert.equal(await readFile(path.join(result.destination, 'scripts/vendor/runtime.js'), 'utf8'), 'window.__legacyVendorLoaded = true;\n');
+  assert.equal(await readFile(path.join(result.destination, 'scripts/vendor/runtime.js'), 'utf8'), 'window.__legacyVendorLoaded = true;\nwindow.__sourceMapText = "//# sourceMappingURL=kept.js.map";\n//# sourceMappingURL=runtime.js.map\n');
   assert.doesNotMatch(html, /scripts\/app-bootstrap\.js/);
   assert.doesNotMatch(html, /##[A-Za-z0-9_.-]+##/);
 });

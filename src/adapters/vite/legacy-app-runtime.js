@@ -167,6 +167,49 @@ function cleanViteId(id) {
   return typeof id === 'string' ? id.split('?', 1)[0] : '';
 }
 
+const SOURCE_MAP_LINE = /^[\t ]*\/\/[#@][\t ]*sourceMappingURL[\t ]*=[\t ]*(\S+)[\t ]*$/gmu;
+
+async function hasLocalSourceMap(appRoot, sourceFile, reference) {
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(reference) || reference.startsWith('//')) return true;
+  const encodedPath = reference.split(/[?#]/, 1)[0];
+  let decodedPath;
+  try {
+    decodedPath = decodeURIComponent(encodedPath);
+  } catch {
+    return false;
+  }
+  if (decodedPath.length === 0 || decodedPath.includes('\0')) return false;
+  const candidate = decodedPath.startsWith('/')
+    ? path.resolve(appRoot, `.${decodedPath}`)
+    : path.resolve(path.dirname(sourceFile), decodedPath);
+  if (!isWithin(appRoot, candidate)) return false;
+  try {
+    const current = await lstat(candidate);
+    return current.isFile() && !current.isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+async function withoutMissingSourceMaps(code, id, appRoot) {
+  const sourceFile = cleanViteId(id);
+  if (typeof code !== 'string' || !/\.[cm]?js$/u.test(sourceFile) || !isWithin(appRoot, sourceFile)) return undefined;
+  const removals = [];
+  for (const match of code.matchAll(SOURCE_MAP_LINE)) {
+    if (!await hasLocalSourceMap(appRoot, sourceFile, match[1])) {
+      removals.push(Object.freeze({ start: match.index, end: match.index + match[0].length }));
+    }
+  }
+  if (removals.length === 0) return undefined;
+  let output = '';
+  let offset = 0;
+  for (const removal of removals) {
+    output += code.slice(offset, removal.start);
+    offset = removal.end;
+  }
+  return `${output}${code.slice(offset)}`;
+}
+
 export async function createLegacyAppPlugins(request) {
   if (!isRecord(request) || !Object.isFrozen(request) || !isRecord(request.session) || !path.isAbsolute(request.session.root) || typeof request.configName !== 'string' || !isRecord(request.config) || !isRecord(request.config.legacy)) {
     throw typedError('LEGACY_APP_RUNTIME_INVALID');
@@ -256,5 +299,19 @@ export async function createLegacyAppPlugins(request) {
       return Object.freeze({ code: replaceAppConfig(code, currentConfig), map: null });
     }
   });
-  return Object.freeze([templatePlugin, configPlugin]);
+  const sourceMapPlugin = Object.freeze({
+    name: 'open-cells-legacy-source-map',
+    enforce: 'pre',
+    async load(id) {
+      const sourceFile = cleanViteId(id);
+      if (!/\.[cm]?js$/u.test(sourceFile) || !isWithin(appRoot, sourceFile)) return null;
+      const relativePath = path.relative(appRoot, sourceFile).split(path.sep).join('/');
+      const source = await captureFile(appDirectory, relativePath, { optional: true });
+      if (source === undefined) return null;
+      const transformed = await withoutMissingSourceMaps(source.content, source.canonicalFile, appRoot);
+      await verifyFile(source);
+      return transformed === undefined ? null : Object.freeze({ code: transformed, map: null });
+    }
+  });
+  return Object.freeze([templatePlugin, configPlugin, sourceMapPlugin]);
 }
