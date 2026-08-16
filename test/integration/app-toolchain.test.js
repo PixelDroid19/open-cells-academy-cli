@@ -269,6 +269,113 @@ test('red: dev uses loopback by default, renders HTTP and HMR, and cleans exact 
   assert.equal(await portIsReleased(ready.port), true);
 });
 
+test('red: legacy runtime renders the selected template and config without changing application sources', async t => {
+  const { root, session } = await workspace(t);
+  const indexSource = '<main>stale index</main>\n';
+  const templateSource = '<!doctype html><html lang="##lang##"><body data-profile="##profileLabel##"></body></html>\n';
+  const bootstrapSource = '(function () { window.AppConfig = {}; window.__profile = window.AppConfig.environment; }());\n';
+  const moduleSource = 'export default { environment: "stale" };\n';
+  await writeWorkspaceFile(root, 'app/index.html', indexSource);
+  await writeWorkspaceFile(root, 'app/tpls/index.tpl', templateSource);
+  await writeWorkspaceFile(root, 'app/scripts/app-bootstrap.js', bootstrapSource);
+  await writeWorkspaceFile(root, 'app/config/app.config.js', moduleSource);
+  const config = Object.freeze({
+    legacy: Object.freeze({ lang: 'es-CO', profileLabel: 'QA', environment: 'qa' }),
+    sourcePath: 'app/config/co/web-test.js'
+  });
+  const { createLegacyAppPlugins } = await import('../../src/adapters/vite/legacy-app-runtime.js');
+
+  const plugins = await createLegacyAppPlugins(Object.freeze({ session, configName: 'co/web-test.js', config }));
+  const templatePlugin = plugins.find(plugin => plugin.name === 'open-cells-legacy-template');
+  const configPlugin = plugins.find(plugin => plugin.name === 'open-cells-legacy-config');
+  const html = await templatePlugin.transformIndexHtml(indexSource);
+  const bootstrap = await configPlugin.transform(bootstrapSource, path.join(root, 'app/scripts/app-bootstrap.js'));
+  const module = await configPlugin.load(path.join(root, 'app/config/app.config.js'));
+
+  assert.match(html, /lang="es-CO"/);
+  assert.match(html, /data-profile="QA"/);
+  assert.match(bootstrap.code, /"environment":"qa"/);
+  assert.doesNotMatch(bootstrap.code, /environment: "stale"/);
+  assert.match(module, /export default \{"lang":"es-CO","profileLabel":"QA","environment":"qa"\};/);
+  assert.equal(await readFile(path.join(root, 'app/index.html'), 'utf8'), indexSource);
+  assert.equal(await readFile(path.join(root, 'app/tpls/index.tpl'), 'utf8'), templateSource);
+  assert.equal(await readFile(path.join(root, 'app/scripts/app-bootstrap.js'), 'utf8'), bootstrapSource);
+  assert.equal(await readFile(path.join(root, 'app/config/app.config.js'), 'utf8'), moduleSource);
+});
+
+test('red: dev forwards the frozen selected config to the Vite adapter without mutating it', async t => {
+  const { root, session } = await workspace(t);
+  await writeConfig(root, 'co/profile.js', 'export default { app: "co", environment: "qa" };');
+  await writeWorkspaceFile(root, 'app/index.html', '<main></main>\n');
+  let received;
+  const handle = Object.freeze({ ready: Promise.resolve(Object.freeze({ url: 'http://127.0.0.1:43001/', host: '127.0.0.1', port: 43001 })), async close() {} });
+  const toolchain = Object.freeze({
+    async startDev(options) {
+      received = options;
+      return handle;
+    }
+  });
+
+  await devApp(devContext(session, toolchain, 'co/profile.js'));
+
+  assert.equal(received.configName, 'co/profile.js');
+  assert.equal(received.config.legacy.environment, 'qa');
+  assert.equal(Object.isFrozen(received.config), true);
+  assert.equal(Object.isFrozen(received.config.legacy), true);
+});
+
+test('red: legacy runtime provides a virtual app config module when generated source is absent', async t => {
+  const { root, session } = await workspace(t);
+  await writeWorkspaceFile(root, 'app/index.html', '<main></main>\n');
+  await writeWorkspaceFile(root, 'app/scripts/app.js', "import appConfig from '../config/app.config.js';\nwindow.__profile = appConfig.environment;\n");
+  const config = Object.freeze({
+    legacy: Object.freeze({ environment: 'de' }),
+    sourcePath: 'app/config/co/web-dev.js'
+  });
+  const { createLegacyAppPlugins } = await import('../../src/adapters/vite/legacy-app-runtime.js');
+  const plugins = await createLegacyAppPlugins(Object.freeze({ session, configName: 'co/web-dev.js', config }));
+  const plugin = plugins.find(candidate => candidate.name === 'open-cells-legacy-config');
+  const importer = path.join(root, 'app/scripts/app.js');
+
+  const resolved = await plugin.resolveId('../config/app.config.js', importer);
+
+  assert.equal(resolved, path.join(root, 'app/config/app.config.js'));
+  assert.equal(await plugin.load(resolved), 'export default {"environment":"de"};\n');
+  await assert.rejects(lstat(resolved), error => error?.code === 'ENOENT');
+});
+
+test('red: legacy runtime reloads the selected nested config before a full HMR refresh', async t => {
+  const { root, session } = await workspace(t);
+  await writeConfig(root, 'co/live.js', 'export default { environment: "de", lang: "es-CO" };');
+  await writeWorkspaceFile(root, 'app/index.html', '<main></main>\n');
+  await writeWorkspaceFile(root, 'app/scripts/app-bootstrap.js', '(function () { window.AppConfig = {}; }());\n');
+  const initial = await loadCellsConfig(session, 'co/live.js');
+  const { createLegacyAppPlugins } = await import('../../src/adapters/vite/legacy-app-runtime.js');
+  const plugins = await createLegacyAppPlugins(Object.freeze({ session, configName: 'co/live.js', config: initial }));
+  const plugin = plugins.find(candidate => candidate.name === 'open-cells-legacy-config');
+  const sent = [];
+  const invalidated = [];
+  const server = {
+    watcher: { add() {} },
+    ws: { send(message) { sent.push(message); } },
+    moduleGraph: {
+      getModuleById(id) { return { id }; },
+      invalidateModule(module) { invalidated.push(module.id); }
+    }
+  };
+  plugin.configureServer(server);
+  await writeConfig(root, 'co/live.js', 'export default { environment: "qa", lang: "es-CO" };');
+
+  await plugin.handleHotUpdate({ file: path.join(root, 'app/config/co/live.js'), server });
+  const bootstrap = await plugin.transform('(function () { window.AppConfig = {}; }());\n', path.join(root, 'app/scripts/app-bootstrap.js'));
+  const module = await plugin.load(path.join(root, 'app/config/app.config.js'));
+
+  assert.match(bootstrap.code, /"environment":"qa"/);
+  assert.match(module, /"environment":"qa"/);
+  assert.deepEqual(sent, [{ type: 'full-reload', path: '*' }]);
+  assert.deepEqual(invalidated.sort(), [path.join(root, 'app/config/app.config.js'), path.join(root, 'app/scripts/app-bootstrap.js')].sort());
+});
+
 test('red: dev allows an explicit LAN bind, falls back from a non-strict occupied port, and rejects a strict one without leaking listeners', async t => {
   const { root, session } = await workspace(t);
   await writeConfig(root, 'ports.js', appConfig());

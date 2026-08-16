@@ -8,6 +8,7 @@ import { typedError } from '../../domain/workspace-session.js';
 import { DevServer } from '../../ports/dev-server.js';
 import { generateAppHtml } from './html-generator.js';
 import { sassPreprocessorOptions } from './sass-log.js';
+import { createLegacyAppPlugins } from './legacy-app-runtime.js';
 import {
   captureStageDirectory,
   createOwnedStage,
@@ -462,7 +463,11 @@ export class AppToolchain {
     try {
       const appSource = await captureAppTemplate(options.session);
       await verifyAppTemplate(appSource);
-      server = await this.#api.createServer(devConfig(options.session, options, appSource.appRoot));
+      const legacyPlugins = appSource.markerPath === undefined && options.config !== undefined
+        ? await createLegacyAppPlugins(Object.freeze({ session: options.session, configName: options.configName, config: options.config }))
+        : Object.freeze([]);
+      const preparedOptions = { ...options, plugins: [...legacyPlugins, ...(options.plugins ?? [])] };
+      server = await this.#api.createServer(devConfig(options.session, preparedOptions, appSource.appRoot));
       if (!isRecord(server) || typeof server.listen !== 'function') throw typedError('VITE_SERVER_INVALID');
       await server.listen();
       await verifyAppTemplate(appSource);

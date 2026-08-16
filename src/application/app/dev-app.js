@@ -38,6 +38,8 @@ function serverOptions(config, context) {
   if (typeof host !== 'string' || !Number.isInteger(port) || port < 0 || port > 65535 || typeof strictPort !== 'boolean') throw typedError('APP_DEV_INVALID');
   return Object.freeze({
     session: context.session,
+    config,
+    configName: context.configName,
     host,
     port,
     strictPort,
