@@ -110,6 +110,23 @@ Available application profiles are `blank`, `web-app`, `web-mobile-app`, and
 publish/subscribe, data management, local APIs, scoped custom elements, events,
 and i18n.
 
+### Run an established Cells application
+
+Applications with the established `app/` layout can select nested configuration
+files below `app/config`. `app:serve` is retained as an alias of `app:dev`:
+
+```bash
+CELLS_LITE_DEVELOPER=true NODE_OPTIONS=--max_old_space_size=8192 \
+  cells app:serve -c market/web-dev.js --host 127.0.0.1 --port 8001 --no-open
+```
+
+The selected configuration is provided to both module-based applications that
+import `app/config/app.config.js` and older bootstrap-based applications that
+read `window.AppConfig`. Template and configuration responses are generated in
+memory; the CLI does not overwrite the application's `index.html`, bootstrap,
+or generated config source while serving. Changes to the selected configuration
+trigger a full Vite refresh.
+
 ## Create a component
 
 Save this as `component.json` in an empty directory:
