@@ -6,10 +6,11 @@ import { ScaffoldPlan } from '../../domain/scaffold-plan.js';
 import { normalizeRelativePath } from '../../domain/path-policy.js';
 import { typedError } from '../../domain/workspace-session.js';
 import { DevServer } from '../../ports/dev-server.js';
-import { startLegacyStaticServer } from '../node/legacy-static-server.js';
 import { generateAppHtml } from './html-generator.js';
+import { loadCellsConfig } from './config-loader.js';
+import { buildLegacyDevelopDist } from './legacy-app-builder.js';
 import { sassPreprocessorOptions } from './sass-log.js';
-import { createLegacyAppPlugins, createLegacyDistRuntime } from './legacy-app-runtime.js';
+import { createLegacyAppPlugins, createLegacyDistRuntime, withoutMissingSourceMaps } from './legacy-app-runtime.js';
 import {
   captureStageDirectory,
   createOwnedStage,
@@ -116,15 +117,19 @@ function urlFor(server, host) {
   return Object.freeze({ url: parsed.href, host, port });
 }
 
-function lifecycle(server, host, onDispose) {
+function lifecycle(server, host, onDispose, beforeClose) {
   if (!isRecord(server) || typeof server.close !== 'function') throw typedError('VITE_SERVER_INVALID');
   let closePromise;
   return new DevServer({
     ready: Promise.resolve(urlFor(server, host)),
     close() {
-      closePromise ??= Promise.resolve(server.close()).finally(() => {
-        if (onDispose !== undefined) onDispose();
-      });
+      closePromise ??= Promise.resolve()
+        .then(() => beforeClose?.())
+        .then(() => server.close())
+        .finally(() => {
+          if (onDispose !== undefined) return onDispose();
+          return undefined;
+        });
       return closePromise;
     }
   });
@@ -145,14 +150,197 @@ function cssOverride(options) {
   return { css: { preprocessorOptions: { scss } } };
 }
 
+const LEGACY_MIME = Object.freeze({
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2'
+});
+
+function cleanViteId(id) {
+  return typeof id === 'string' ? id.split('?', 1)[0] : '';
+}
+
+function legacyDependencyPlugin(runtime, waitForRebuild = async () => undefined) {
+  return Object.freeze({
+    name: 'open-cells-legacy-dependency-assets',
+    enforce: 'pre',
+    configureServer(server) {
+      server.middlewares.use(async (request, response, next) => {
+        let pathname;
+        try {
+          pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
+        } catch {
+          next();
+          return;
+        }
+        const isDependency = pathname.startsWith('/bower_components/');
+        const isCandidateAsset = pathname === '/' || isDependency || /\.[A-Za-z0-9]+$/u.test(pathname);
+        const isViteRequest = pathname.startsWith('/@') || pathname.startsWith('/node_modules/') || (request.url ?? '').includes('html-proxy');
+        if (!isCandidateAsset || isViteRequest) {
+          next();
+          return;
+        }
+        try {
+          await waitForRebuild();
+          const asset = await runtime.read(pathname);
+          if (asset === undefined) {
+            if ((request.method ?? 'GET') !== 'GET' && request.method !== 'HEAD') {
+              next();
+              return;
+            }
+            response.statusCode = 404;
+            response.end('Not Found');
+            return;
+          }
+          if ((request.method ?? 'GET') !== 'GET' && request.method !== 'HEAD') {
+            response.statusCode = 405;
+            response.setHeader('Allow', 'GET, HEAD');
+            response.end();
+            return;
+          }
+          const extension = path.extname(asset.relativePath).toLowerCase();
+          if (!isDependency && extension === '.js') {
+            next();
+            return;
+          }
+          const content = !isDependency && extension === '.html'
+            ? Buffer.from(await server.transformIndexHtml(pathname, asset.content.toString('utf8')))
+            : asset.content;
+          response.statusCode = 200;
+          response.setHeader('Content-Type', LEGACY_MIME[extension] ?? 'application/octet-stream');
+          response.setHeader('Content-Length', content.byteLength);
+          if (request.method === 'HEAD') response.end();
+          else response.end(content);
+        } catch {
+          response.statusCode = 404;
+          response.end('Not Found');
+        }
+      });
+    },
+    async load(id) {
+      const sourceFile = cleanViteId(id);
+      if (!/\.[cm]?js$/u.test(sourceFile) || !isWithin(runtime.root, sourceFile)) return null;
+      await waitForRebuild();
+      const relativePath = path.relative(runtime.root, sourceFile).split(path.sep).join('/');
+      const asset = await runtime.read(`/${relativePath}`);
+      if (asset === undefined) return null;
+      const code = asset.content.toString('utf8');
+      const transformed = await withoutMissingSourceMaps(code, sourceFile, runtime.root);
+      return Object.freeze({ code: transformed ?? code, map: null });
+    }
+  });
+}
+
+function legacyRebuildPlugin(runtime, options) {
+  const sourceRoots = Object.freeze([
+    path.join(options.session.root, 'app'),
+    path.join(options.session.root, 'components')
+  ]);
+  let configDependencies = new Set();
+  let rebuildPromise;
+  let rebuildAgain = false;
+  let closing = false;
+  let rebuildAbortController;
+
+  function updateConfigDependencies(config) {
+    configDependencies = new Set((config.sourceDependencies ?? [config.sourcePath])
+      .map(relative => path.join(options.session.root, ...relative.split('/'))));
+  }
+
+  function watch(server) {
+    server?.watcher?.add?.([...sourceRoots, ...configDependencies]);
+  }
+
+  function ownsSource(file) {
+    const changed = path.resolve(file);
+    return sourceRoots.some(root => isWithin(root, changed)) || configDependencies.has(changed);
+  }
+
+  async function rebuild(server) {
+    if (closing) return undefined;
+    if (rebuildPromise !== undefined) {
+      rebuildAgain = true;
+      return rebuildPromise;
+    }
+    rebuildPromise = (async () => {
+      rebuildAbortController = new AbortController();
+      do {
+        rebuildAgain = false;
+        const config = await loadCellsConfig(options.session, options.configName);
+        await buildLegacyDevelopDist(Object.freeze({
+          session: options.session,
+          filesystem: options.filesystem,
+          compiler: options.compiler,
+          configName: options.configName,
+          config,
+          signal: rebuildAbortController.signal
+        }));
+        await runtime.refresh();
+        updateConfigDependencies(config);
+        watch(server);
+      } while (rebuildAgain);
+      server?.moduleGraph?.invalidateAll?.();
+      server?.ws?.send?.({ type: 'full-reload', path: '*' });
+    })().finally(() => {
+      rebuildAbortController = undefined;
+      rebuildPromise = undefined;
+    });
+    return rebuildPromise;
+  }
+
+  updateConfigDependencies(options.config);
+  return Object.freeze({
+    name: 'open-cells-legacy-rebuild',
+    configureServer(server) {
+      watch(server);
+    },
+    async handleHotUpdate(context) {
+      if (!ownsSource(context.file)) return undefined;
+      await rebuild(context.server);
+      return [];
+    },
+    async close() {
+      closing = true;
+      rebuildAbortController?.abort();
+      if (rebuildPromise !== undefined) {
+        try {
+          await rebuildPromise;
+        } catch (cause) {
+          if (cause?.code !== 'INTERRUPTED') throw cause;
+        }
+      }
+    },
+    async waitForIdle() {
+      if (rebuildPromise === undefined) return;
+      try {
+        await rebuildPromise;
+      } catch {}
+    }
+  });
+}
+
 function devConfig(session, options, appRoot) {
-  return {
+  const config = {
     root: appRoot,
     clearScreen: options.clearScreen ?? false,
     ...cssOverride(options),
-    server: { host: options.host, port: options.port, strictPort: options.strictPort, open: options.open ?? false },
+    server: {
+      host: options.host,
+      port: options.port,
+      strictPort: options.strictPort,
+      open: options.open ?? false,
+      ...(options.preTransformRequests === undefined ? {} : { preTransformRequests: options.preTransformRequests }),
+      ...(options.fsAllow === undefined ? {} : { fs: { strict: true, allow: mutableClone(options.fsAllow) } })
+    },
     plugins: mutableClone(options.plugins ?? [])
   };
+  if (options.optimizeDeps !== undefined) config.optimizeDeps = mutableClone(options.optimizeDeps);
+  return config;
 }
 
 function previewConfig(session, configName, options, appRoot) {
@@ -537,14 +725,35 @@ export class AppToolchain {
     try {
       if (options.runtime === 'legacy-dist') {
         if (options.config === undefined || typeof options.configName !== 'string') throw typedError('VITE_OPTIONS_INVALID');
+        if (options.build !== false) {
+          await buildLegacyDevelopDist(Object.freeze({
+            session: options.session,
+            filesystem: options.filesystem,
+            compiler: options.compiler,
+            configName: options.configName,
+            config: options.config
+          }));
+        }
         const runtime = await createLegacyDistRuntime(Object.freeze({ session: options.session, configName: options.configName, config: options.config }));
-        return await startLegacyStaticServer({
-          runtime,
-          host: options.host,
-          port: options.port,
-          strictPort: options.strictPort,
-          onDispose: restoreDebug
-        });
+        const rebuildPlugin = options.build === false ? undefined : legacyRebuildPlugin(runtime, options);
+        const preparedOptions = {
+          ...options,
+          optimizeDeps: Object.freeze({ noDiscovery: true, include: Object.freeze([]) }),
+          preTransformRequests: false,
+          fsAllow: Object.freeze([runtime.root, path.join(options.session.root, 'node_modules')]),
+          plugins: [
+            legacyDependencyPlugin(runtime, rebuildPlugin === undefined ? undefined : () => rebuildPlugin.waitForIdle()),
+            ...(rebuildPlugin === undefined ? [] : [rebuildPlugin]),
+            ...(options.plugins ?? [])
+          ]
+        };
+        server = await this.#api.createServer(devConfig(options.session, preparedOptions, runtime.root));
+        if (!isRecord(server) || typeof server.listen !== 'function') throw typedError('VITE_SERVER_INVALID');
+        await server.listen();
+        await runtime.verify();
+        return lifecycle(server, options.host, () => {
+          if (restoreDebug !== undefined) restoreDebug();
+        }, () => rebuildPlugin?.close());
       }
       const appSource = await captureAppTemplate(options.session);
       await verifyAppTemplate(appSource);
@@ -559,7 +768,7 @@ export class AppToolchain {
       return lifecycle(server, options.host, restoreDebug);
     } catch (cause) {
       if (restoreDebug !== undefined) restoreDebug();
-      if (cause?.code === 'VITE_SERVER_INVALID' || cause?.code === 'APP_BUILD_SOURCE_INVALID' || cause?.code === 'PATH_CHANGED') throw cause;
+      if (cause?.code === 'VITE_SERVER_INVALID' || cause?.code === 'APP_BUILD_SOURCE_INVALID' || cause?.code === 'LEGACY_APP_BUILD_INVALID' || cause?.code === 'PATH_CHANGED') throw cause;
       try {
         await server?.close?.();
       } catch {}

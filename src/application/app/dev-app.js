@@ -19,6 +19,8 @@ function normalizedContext(context) {
   if (runtime !== 'source' && runtime !== 'legacy-dist') throw typedError('APP_DEV_INVALID');
   return Object.freeze({
     session: context.session,
+    filesystem: context.filesystem,
+    compiler: context.compiler,
     configName: context.configName,
     toolchain: context.toolchain,
     signals: context.signals,
@@ -41,6 +43,8 @@ function serverOptions(config, context) {
   if (typeof host !== 'string' || !Number.isInteger(port) || port < 0 || port > 65535 || typeof strictPort !== 'boolean') throw typedError('APP_DEV_INVALID');
   return Object.freeze({
     session: context.session,
+    filesystem: context.filesystem,
+    compiler: context.compiler,
     config,
     configName: context.configName,
     runtime: context.runtime,
@@ -50,6 +54,7 @@ function serverOptions(config, context) {
     open: optionValue(options, 'open', configured.open ?? false),
     clearScreen: optionValue(options, 'clearScreen', false),
     debug: optionValue(options, 'debug', false),
+    build: options.build,
     sassLogLevel: options.sassLogLevel
   });
 }

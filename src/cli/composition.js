@@ -630,6 +630,8 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
     } else {
       handle = await devApp(Object.freeze({
         session,
+        filesystem,
+        compiler: tools.sass,
         toolchain: tools.app,
         configName: optionOf(parsed, 'config'),
         runtime: parsed.invokedCommand === 'app:serve' ? 'legacy-dist' : 'source',

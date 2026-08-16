@@ -237,7 +237,7 @@ async function hasLocalSourceMap(appRoot, sourceFile, reference) {
   }
 }
 
-async function withoutMissingSourceMaps(code, id, appRoot) {
+export async function withoutMissingSourceMaps(code, id, appRoot) {
   const sourceFile = cleanViteId(id);
   if (typeof code !== 'string' || !/\.[cm]?js$/u.test(sourceFile) || !isWithin(appRoot, sourceFile)) return undefined;
   const removals = [];
@@ -369,19 +369,50 @@ export async function createLegacyDistRuntime(request) {
   if (!isRecord(request) || !Object.isFrozen(request) || !isRecord(request.session) || !path.isAbsolute(request.session.root) || typeof request.configName !== 'string' || !isRecord(request.config) || !isRecord(request.config.legacy)) {
     throw typedError('LEGACY_APP_RUNTIME_INVALID');
   }
-  const distDirectory = await captureDirectory(request.session, 'dist');
-  const [index, appModule] = await Promise.all([
-    captureFile(distDirectory, 'index.html'),
-    captureFile(distDirectory, 'app-module.js')
-  ]);
+  async function captureState() {
+    const distDirectory = await captureDirectory(request.session, 'dist');
+    const componentsDirectory = await captureDirectory(request.session, 'components');
+    const [index, appModule, bootstrap] = await Promise.all([
+      captureFile(distDirectory, 'index.html'),
+      captureFile(distDirectory, 'app-module.js', { optional: true }),
+      captureFile(distDirectory, 'scripts/app-bootstrap.js', { optional: true })
+    ]);
+    if (appModule === undefined && bootstrap === undefined) throw typedError('LEGACY_APP_RUNTIME_INVALID');
+    return Object.freeze({ distDirectory, componentsDirectory, index, appModule, bootstrap });
+  }
+
+  async function verifyState(state) {
+    await Promise.all([
+      verifyDirectory(state.distDirectory),
+      verifyDirectory(state.componentsDirectory),
+      verifyFile(state.index),
+      ...(state.appModule === undefined ? [] : [verifyFile(state.appModule)]),
+      ...(state.bootstrap === undefined ? [] : [verifyFile(state.bootstrap)])
+    ]);
+  }
+
+  let state = await captureState();
 
   return Object.freeze({
-    root: distDirectory.candidate,
+    root: state.distDirectory.candidate,
     async read(pathname) {
-      const asset = await readAsset(distDirectory, pathname);
+      const current = state;
+      let asset = await readAsset(current.distDirectory, pathname);
+      if (asset === undefined) {
+        const relativePath = assetPath(pathname);
+        if (relativePath.startsWith('bower_components/') && relativePath !== 'bower_components/initial-components.html' && relativePath !== 'bower_components/app-components.html') {
+          asset = await readAsset(current.componentsDirectory, relativePath.slice('bower_components/'.length));
+          if (asset !== undefined) asset = Object.freeze({ ...asset, relativePath });
+        }
+      }
       if (asset === undefined) return undefined;
-      if (asset.relativePath !== 'app-module.js') return asset;
-      await verifyFile(appModule);
+      const source = asset.relativePath === 'app-module.js'
+        ? current.appModule
+        : asset.relativePath === 'scripts/app-bootstrap.js'
+          ? current.bootstrap
+          : undefined;
+      if (source === undefined) return asset;
+      await verifyFile(source);
       const config = distConfig((await loadCellsConfig(request.session, request.configName)).legacy);
       return Object.freeze({
         content: Buffer.from(replaceAppConfig(asset.content.toString('utf8'), config)),
@@ -389,7 +420,12 @@ export async function createLegacyDistRuntime(request) {
       });
     },
     async verify() {
-      await Promise.all([verifyDirectory(distDirectory), verifyFile(index), verifyFile(appModule)]);
+      await verifyState(state);
+    },
+    async refresh() {
+      const next = await captureState();
+      await verifyState(next);
+      state = next;
     }
   });
 }
