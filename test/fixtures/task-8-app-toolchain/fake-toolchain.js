@@ -29,8 +29,14 @@ function publicUrl(host, port) {
   return `http://${host}:${port}/`;
 }
 
-function findTransform(config) {
-  return (config.plugins ?? []).find(plugin => typeof plugin?.transformIndexHtml === 'function')?.transformIndexHtml;
+async function transformHtml(config, html) {
+  let transformed = html;
+  for (const plugin of config.plugins ?? []) {
+    const hook = plugin?.transformIndexHtml;
+    if (typeof hook === 'function') transformed = await hook(transformed);
+    else if (typeof hook?.handler === 'function') transformed = await hook.handler(transformed);
+  }
+  return transformed;
 }
 
 function contentType(file) {
@@ -112,9 +118,8 @@ export function createFakeVite({ failBuild = false } = {}) {
       calls.push(Object.freeze({ method: 'build', config }));
       if (failBuild) throw new Error('fake-build-failure');
       const outDir = config.build.outDir;
-      const transform = findTransform(config);
       let html = await readFile(path.join(config.root, 'index.html'), 'utf8');
-      if (transform !== undefined) html = await transform(html);
+      html = await transformHtml(config, html);
       await mkdir(path.join(outDir, 'assets'), { recursive: true });
       await writeFile(path.join(outDir, 'index.html'), html);
       await writeFile(path.join(outDir, 'assets', 'main.js'), config.build.sourcemap ? 'console.log("built");\n//# sourceMappingURL=main.js.map\n' : 'console.log("built");\n');

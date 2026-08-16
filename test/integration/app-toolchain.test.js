@@ -288,7 +288,7 @@ test('red: legacy runtime renders the selected template and config without chang
   const plugins = await createLegacyAppPlugins(Object.freeze({ session, configName: 'co/web-test.js', config }));
   const templatePlugin = plugins.find(plugin => plugin.name === 'open-cells-legacy-template');
   const configPlugin = plugins.find(plugin => plugin.name === 'open-cells-legacy-config');
-  const html = await templatePlugin.transformIndexHtml(indexSource);
+  const html = await templatePlugin.transformIndexHtml.handler(indexSource);
   const bootstrap = await configPlugin.transform(bootstrapSource, path.join(root, 'app/scripts/app-bootstrap.js'));
   const module = await configPlugin.load(path.join(root, 'app/config/app.config.js'));
 
@@ -718,6 +718,28 @@ test('red: build atomically publishes rendered source maps, resources, vendor, m
   assert.match(await readFile(path.join(result.destination, 'index.html'), 'utf8'), /serviceWorker\.register/);
   assert.match(await readFile(path.join(result.destination, 'sw.js'), 'utf8'), /skipWaiting/);
   assert.deepEqual(workboxApi.calls.map(call => call.method), ['generateSW']);
+});
+
+test('red: build publishes a nested legacy profile with its selected template and runtime config', async t => {
+  const { filesystem, root, session } = await workspace(t);
+  await writeConfig(root, 'market/release.js', 'export default { lang: "es", label: "Release", environment: "qa", build: { target: "es2020" } };');
+  const indexSource = '<main>stale</main>\n';
+  const bootstrapSource = '(function () { window.AppConfig = {}; }());\n';
+  await writeWorkspaceFile(root, 'app/index.html', indexSource);
+  await writeWorkspaceFile(root, 'app/tpls/index.tpl', '<!doctype html><html lang="##lang##"><body data-label="##label##"></body></html>\n');
+  await writeWorkspaceFile(root, 'app/scripts/app-bootstrap.js', bootstrapSource);
+  const vite = createFakeVite();
+
+  const result = await buildApp(buildContext(session, filesystem, new AppToolchain(vite), 'market/release.js'));
+
+  assert.equal(result.destination, path.join(root, 'build', 'market', 'release'));
+  assert.match(await readFile(path.join(result.destination, 'index.html'), 'utf8'), /data-label="Release"/);
+  const call = vite.calls.find(candidate => candidate.method === 'build');
+  const configPlugin = call.config.plugins.find(plugin => plugin.name === 'open-cells-legacy-config');
+  const transformed = await configPlugin.transform(bootstrapSource, path.join(root, 'app/scripts/app-bootstrap.js'));
+  assert.match(transformed.code, /"environment":"qa"/);
+  assert.equal(await readFile(path.join(root, 'app/index.html'), 'utf8'), indexSource);
+  assert.equal(await readFile(path.join(root, 'app/scripts/app-bootstrap.js'), 'utf8'), bootstrapSource);
 });
 
 test('red: build supports injectManifest and disabled service-worker modes without writing an undeclared worker', async t => {

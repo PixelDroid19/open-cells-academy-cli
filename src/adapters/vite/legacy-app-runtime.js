@@ -145,11 +145,14 @@ export async function createLegacyAppPlugins(request) {
   }
   const templatePlugin = Object.freeze({
     name: 'open-cells-legacy-template',
-    async transformIndexHtml(html) {
-      if (template === undefined) return html;
-      await verifyFile(template);
-      return renderTemplate(template.content, currentConfig);
-    }
+    transformIndexHtml: Object.freeze({
+      order: 'pre',
+      async handler(html) {
+        if (template === undefined) return html;
+        await verifyFile(template);
+        return renderTemplate(template.content, currentConfig);
+      }
+    })
   });
   const configPlugin = Object.freeze({
     name: 'open-cells-legacy-config',

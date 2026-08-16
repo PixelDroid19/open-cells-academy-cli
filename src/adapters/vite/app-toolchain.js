@@ -71,8 +71,19 @@ function assertServerOptions(options) {
 }
 
 function outputName(configName) {
-  if (typeof configName !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:js|mjs)$/.test(configName)) throw typedError('VITE_OPTIONS_INVALID');
-  return configName.replace(/\.m?js$/, '');
+  let segments;
+  try {
+    segments = normalizeRelativePath(configName);
+  } catch {
+    throw typedError('VITE_OPTIONS_INVALID');
+  }
+  const fileName = segments.at(-1);
+  if (
+    typeof configName !== 'string' ||
+    !/^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:js|mjs)$/.test(fileName) ||
+    segments.slice(0, -1).some(segment => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment))
+  ) throw typedError('VITE_OPTIONS_INVALID');
+  return [...segments.slice(0, -1), fileName.replace(/\.m?js$/, '')].join('/');
 }
 
 function readyUrl(host, port) {
@@ -168,7 +179,15 @@ function appValues(config) {
 }
 
 function htmlPlugin(html) {
-  return Object.freeze({ name: 'academy-html', transformIndexHtml: () => html });
+  return Object.freeze({
+    name: 'academy-html',
+    transformIndexHtml: Object.freeze({
+      order: 'pre',
+      handler(source) {
+        return source.includes('##app.lang##') ? html : source;
+      }
+    })
+  });
 }
 
 function sourceMapValue(build, options) {
@@ -427,6 +446,23 @@ async function createBuildParent(session) {
   return Object.freeze({ parent, created: true });
 }
 
+async function ensureBuildParents(request, name) {
+  const root = await createBuildParent(request.session);
+  const directories = name.split('/').slice(0, -1);
+  let relative = 'build';
+  for (const directory of directories) {
+    relative = `${relative}/${directory}`;
+    const target = path.join(request.session.root, ...relative.split('/'));
+    const current = await status(target);
+    if (current === undefined) {
+      await request.filesystem.applyPlanAtomically(request.session, ScaffoldPlan.empty(), relative);
+    } else if (!current.isDirectory() || current.isSymbolicLink()) {
+      throw typedError('DESTINATION_PARENT_INVALID');
+    }
+  }
+  return root;
+}
+
 async function removeNewEmptyParent(parent) {
   try {
     if ((await readdir(parent)).length === 0) await rmdir(parent);
@@ -508,9 +544,12 @@ export class AppToolchain {
     let operationFailure;
     let result;
     try {
-      const html = appSource.markerPath === undefined
+      const legacyPlugins = appSource.markerPath === undefined
+        ? await createLegacyAppPlugins(Object.freeze({ session: request.session, configName: request.configName, config: request.config }))
+        : Object.freeze([]);
+      const academyHtml = appSource.markerPath === undefined && template.includes('##app.lang##')
         ? generateAppHtml({ template, values: appValues(request.config) })
-        : template;
+        : undefined;
       await verifyAppTemplate(appSource);
       await this.build(Object.freeze({
         root: appSource.appRoot,
@@ -518,7 +557,7 @@ export class AppToolchain {
         build: request.config.build,
         sourceMap: request.options?.sourceMap,
         sassLogLevel: request.options?.sassLogLevel,
-        plugins: Object.freeze([htmlPlugin(html)])
+        plugins: Object.freeze([...legacyPlugins, ...(academyHtml === undefined ? [] : [htmlPlugin(academyHtml)])])
       }));
       await verifyAppTemplate(appSource);
       await verifyOwnedStage(ownedStage);
@@ -535,8 +574,9 @@ export class AppToolchain {
       await verifyOwnedStage(ownedStage);
       const plan = await planForStage(stage, APP_STAGE_OPTIONS);
       await verifyOwnedStage(ownedStage);
-      buildParent = await createBuildParent(request.session);
-      result = await request.filesystem.applyPlanAtomically(request.session, plan, `build/${outputName(request.configName)}`, { replace: true });
+      const name = outputName(request.configName);
+      buildParent = await ensureBuildParents(request, name);
+      result = await request.filesystem.applyPlanAtomically(request.session, plan, `build/${name}`, { replace: true });
     } catch (cause) {
       operationFailure = cause;
     }

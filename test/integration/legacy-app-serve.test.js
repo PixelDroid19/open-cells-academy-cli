@@ -6,6 +6,7 @@ import test from 'node:test';
 import * as vite from 'vite';
 
 import { AppToolchain } from '../../src/adapters/vite/app-toolchain.js';
+import { buildApp } from '../../src/application/app/build-app.js';
 import { devApp } from '../../src/application/app/dev-app.js';
 import { NodeFilesystem } from '../../src/adapters/node/node-filesystem.js';
 import { WorkspaceSession } from '../../src/domain/workspace-session.js';
@@ -87,4 +88,21 @@ test('integration: real Vite serves distinct legacy DEV and QA profiles without 
   handle = undefined;
 
   assert.deepEqual(await Promise.all(sourcePaths.map(relative => readFile(path.join(root, relative), 'utf8'))), originals);
+});
+
+test('integration: real Vite build consumes the rendered legacy HTML before emitting asset references', async t => {
+  const { root, session } = await fixture(t);
+  const filesystem = new NodeFilesystem();
+
+  const result = await buildApp(Object.freeze({
+    session,
+    filesystem,
+    toolchain: new AppToolchain(vite),
+    configName: 'market/qa.js'
+  }));
+
+  const html = await readFile(path.join(result.destination, 'index.html'), 'utf8');
+  assert.match(html, /(?:src|href)="\.\/assets\//);
+  assert.doesNotMatch(html, /scripts\/app-bootstrap\.js/);
+  assert.doesNotMatch(html, /##[A-Za-z0-9_.-]+##/);
 });
