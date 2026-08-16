@@ -16,16 +16,19 @@ function isPlainObject(value) {
   return prototype === Object.prototype || prototype === null;
 }
 
-function cloneConfigValue(value, seen = new WeakMap()) {
+function cloneConfigValue(value, seen = new WeakMap(), active = new WeakSet()) {
   if (Array.isArray(value)) {
     if (seen.has(value)) {
-      throw new TypeError('Selected config data must not be cyclic');
+      if (active.has(value)) throw new TypeError('Selected config data must not be cyclic');
+      return seen.get(value);
     }
     const copy = [];
     seen.set(value, copy);
+    active.add(value);
     for (const item of value) {
-      copy.push(cloneConfigValue(item, seen));
+      copy.push(cloneConfigValue(item, seen, active));
     }
+    active.delete(value);
     return copy;
   }
   if (value === null || typeof value !== 'object') {
@@ -35,18 +38,21 @@ function cloneConfigValue(value, seen = new WeakMap()) {
     throw new TypeError('Selected config data must be plain objects');
   }
   if (seen.has(value)) {
-    throw new TypeError('Selected config data must not be cyclic');
+    if (active.has(value)) throw new TypeError('Selected config data must not be cyclic');
+    return seen.get(value);
   }
   const copy = {};
   seen.set(value, copy);
+  active.add(value);
   for (const [key, item] of Object.entries(value)) {
     Object.defineProperty(copy, key, {
-      value: cloneConfigValue(item, seen),
+      value: cloneConfigValue(item, seen, active),
       enumerable: true,
       configurable: true,
       writable: true
     });
   }
+  active.delete(value);
   return copy;
 }
 
@@ -85,13 +91,28 @@ function assertSession(session) {
 function sourcePathFromName(configName) {
   try {
     const segments = normalizeRelativePath(configName);
-    if (segments.length !== 1 || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:js|mjs)$/.test(segments[0])) {
+    const fileName = segments.at(-1);
+    const directories = segments.slice(0, -1);
+    if (
+      segments.length === 0 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:js|mjs)$/.test(fileName) ||
+      directories.some(segment => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment))
+    ) {
       throw new TypeError('Invalid config filename');
     }
-    return `${CONFIG_DIRECTORY.join('/')}/${segments[0]}`;
+    return `${CONFIG_DIRECTORY.join('/')}/${segments.join('/')}`;
   } catch (cause) {
     throw invalidConfig('app/config');
   }
+}
+
+function sameIdentity(left, right) {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+function within(parent, candidate) {
+  const relative = path.relative(parent, candidate);
+  return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
 function selectField(root, academy, legacy, field) {
@@ -137,7 +158,7 @@ function normalizeConfig(defaultExport, sourcePath) {
     const normalizedLocales = locales === undefined ? undefined : copySelectedObject(locales);
     const normalizedBuild = build === undefined ? undefined : copySelectedObject(build);
     const normalizedPreview = normalizedServer === undefined ? undefined : cloneConfigValue(normalizedServer);
-    const record = { sourcePath };
+    const record = { sourcePath, legacy: cloneConfigValue(defaultExport) };
     if (normalizedServer !== undefined) {
       record.server = normalizedServer;
       record.preview = normalizedPreview;
@@ -166,33 +187,49 @@ function normalizeConfig(defaultExport, sourcePath) {
 }
 
 async function verifiedConfigFile(root, sourcePath) {
-  const candidate = path.join(root, ...sourcePath.split('/'));
+  const sourceSegments = sourcePath.split('/');
+  const relativeSegments = sourceSegments.slice(CONFIG_DIRECTORY.length);
+  const candidate = path.join(root, ...sourceSegments);
   const appDirectory = path.join(root, CONFIG_DIRECTORY[0]);
   const expectedDirectory = path.join(root, ...CONFIG_DIRECTORY);
-  let initial;
   try {
-    const appStatus = await lstat(appDirectory);
-    if (!appStatus.isDirectory() || appStatus.isSymbolicLink()) {
-      throw new TypeError('Application directory is not a regular directory');
+    const directoryPaths = [
+      root,
+      appDirectory,
+      expectedDirectory,
+      ...relativeSegments.slice(0, -1).map((_, index) => path.join(expectedDirectory, ...relativeSegments.slice(0, index + 1)))
+    ];
+    const directories = [];
+    for (const directoryPath of directoryPaths) {
+      const initial = await lstat(directoryPath);
+      if (!initial.isDirectory() || initial.isSymbolicLink()) {
+        throw new TypeError('Config ancestor is not a regular directory');
+      }
+      directories.push(Object.freeze({
+        path: directoryPath,
+        canonical: await realpath(directoryPath),
+        initial: Object.freeze({ dev: initial.dev, ino: initial.ino })
+      }));
     }
-    const directoryStatus = await lstat(expectedDirectory);
-    if (!directoryStatus.isDirectory() || directoryStatus.isSymbolicLink()) {
-      throw new TypeError('Config directory is not a regular directory');
-    }
-    initial = await lstat(candidate);
+    const initial = await lstat(candidate);
     if (!initial.isFile() || initial.isSymbolicLink()) {
       throw new TypeError('Config is not a regular file');
     }
     const canonicalDirectory = await realpath(expectedDirectory);
     const canonicalFile = await realpath(candidate);
-    if (path.dirname(canonicalFile) !== canonicalDirectory) {
+    if (!within(canonicalDirectory, canonicalFile) || canonicalFile === canonicalDirectory) {
       throw new TypeError('Config escaped directory');
     }
     const canonicalStatus = await stat(canonicalFile);
-    if (!canonicalStatus.isFile()) {
+    if (!canonicalStatus.isFile() || !sameIdentity(initial, canonicalStatus)) {
       throw new TypeError('Config is not a file');
     }
-    return Object.freeze({ candidate, canonicalFile, initial });
+    return Object.freeze({
+      candidate,
+      canonicalFile,
+      initial: Object.freeze({ dev: initial.dev, ino: initial.ino }),
+      directories: Object.freeze(directories)
+    });
   } catch (cause) {
     throw invalidConfig(sourcePath);
   }
@@ -200,9 +237,21 @@ async function verifiedConfigFile(root, sourcePath) {
 
 async function assertUnchanged(file, sourcePath) {
   try {
+    for (const directory of file.directories) {
+      const current = await lstat(directory.path);
+      if (!current.isDirectory() || current.isSymbolicLink() || !sameIdentity(current, directory.initial)) {
+        throw new TypeError('Config ancestor changed');
+      }
+      if (await realpath(directory.path) !== directory.canonical) {
+        throw new TypeError('Config ancestor target changed');
+      }
+    }
     const current = await lstat(file.candidate);
-    if (!current.isFile() || current.isSymbolicLink() || current.dev !== file.initial.dev || current.ino !== file.initial.ino) {
+    if (!current.isFile() || current.isSymbolicLink() || !sameIdentity(current, file.initial)) {
       throw new TypeError('Config path changed');
+    }
+    if (await realpath(file.candidate) !== file.canonicalFile) {
+      throw new TypeError('Config target changed');
     }
   } catch (cause) {
     throw invalidConfig(sourcePath);

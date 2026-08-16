@@ -29,13 +29,16 @@ function values(overrides = {}) {
   };
 }
 
-async function fixture(t) {
+async function fixture(t, { moduleType = true } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'open-cells-academy-config-html-'));
   t.after(async () => {
     await rm(root, { recursive: true, force: true });
   });
   await mkdir(path.join(root, 'app', 'config'), { recursive: true });
-  await writeFile(path.join(root, 'package.json'), JSON.stringify({ name: 'config-html-fixture', type: 'module' }));
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({
+    name: 'config-html-fixture',
+    ...(moduleType ? { type: 'module' } : {})
+  }));
   const filesystem = new NodeFilesystem();
   const session = await WorkspaceSession.open(root, filesystem);
   return { root, session };
@@ -78,6 +81,35 @@ test('break: config selects nested legacy server, locales, and app_properties.ap
   assert.deepEqual(config.server, { port: 9090, nested: { enabled: true } });
   assert.deepEqual(config.app, { name: 'legacy-app', title: 'Legacy' });
   assert.deepEqual(config.locales, { source: 'legacy' });
+});
+
+test('integration: config loads a nested CommonJS market file and preserves its frozen legacy payload', async t => {
+  const { root, session } = await fixture(t, { moduleType: false });
+  await mkdir(path.join(root, 'app', 'config', 'co'), { recursive: true });
+  await writeFile(
+    path.join(root, 'app', 'config', 'co', 'web-dev.js'),
+    "module.exports = { cells_properties: { server: { port: 8121 }, locales: { languages: ['es-CO'] } }, app_properties: { app: { name: 'legacy-market' } }, market: { code: 'co' } };"
+  );
+
+  const config = await loadCellsConfig(session, 'co/web-dev.js');
+
+  assert.equal(config.sourcePath, 'app/config/co/web-dev.js');
+  assert.deepEqual(config.server, { port: 8121 });
+  assert.deepEqual(config.app, { name: 'legacy-market' });
+  assert.deepEqual(config.locales, { languages: ['es-CO'] });
+  assert.deepEqual(config.legacy.market, { code: 'co' });
+  assert.equal(Object.isFrozen(config.legacy), true);
+  assert.equal(Object.isFrozen(config.legacy.market), true);
+});
+
+test('break: nested config directory symlinks and traversal remain outside the trusted boundary', async t => {
+  const { root, session } = await fixture(t);
+  await mkdir(path.join(root, 'app', 'config', 'real-market'));
+  await writeFile(path.join(root, 'app', 'config', 'real-market', 'web-dev.js'), 'export default { server: { port: 8121 } };');
+  await symlink('real-market', path.join(root, 'app', 'config', 'co'), 'dir');
+
+  await assertConfigCode(loadCellsConfig(session, 'co/web-dev.js'), 'app/config/co/web-dev.js');
+  await assertConfigCode(loadCellsConfig(session, 'co/../real-market/web-dev.js'), 'app/config');
 });
 
 test('break: config treats legacy app_properties itself as app data when it has no app wrapper', async t => {
@@ -300,7 +332,7 @@ test('break: unsafe names and non-plain selected config values stop bypassing th
   const { root, session } = await fixture(t);
   await writeConfig(root, 'array.js', 'export default { server: [] };');
 
-  for (const configName of ['../outside.js', '/tmp/outside.js', 'nested/config.js', 'config.txt', 'broken\u0000.js']) {
+  for (const configName of ['../outside.js', '/tmp/outside.js', 'nested/../config.js', 'config.txt', 'broken\u0000.js']) {
     await assertConfigCode(loadCellsConfig(session, configName), 'app/config');
   }
   await assertConfigCode(loadCellsConfig(session, 'array.js'), 'app/config/array.js');

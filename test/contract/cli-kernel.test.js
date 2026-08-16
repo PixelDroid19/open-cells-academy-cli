@@ -512,6 +512,21 @@ test('contract: legacy lit-component commands parse to their canonical component
   assert.equal(docs.command.name, 'component:documentation');
 });
 
+test('contract: legacy app:serve parses to canonical app:dev with a nested market config', () => {
+  const parsed = parseArgv(
+    ['app:serve', '-c', 'co/web-dev.js', '--host', '127.0.0.1', '--port', '41211', '--no-open'],
+    createCommandRegistry(),
+    { env: {}, locale: 'en_US.UTF-8' }
+  );
+
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.command.name, 'app:dev');
+  assert.equal(parsed.options.config, 'co/web-dev.js');
+  assert.equal(parsed.options.host, '127.0.0.1');
+  assert.equal(parsed.options.port, 41211);
+  assert.equal(parsed.options.open, false);
+});
+
 test('break: component create stops retaining explicitly supplied boolean flags separately from defaults', () => {
   const registry = createCommandRegistry();
   const omitted = parseArgv(['component:create', '--scaffold', '{"name":"academy-card","namespace":"@academy"}'], registry, {

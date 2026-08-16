@@ -6,6 +6,7 @@ const ROOT_HELP_OPTIONS = new Set(['--help', '-h']);
 const ROOT_VERSION_OPTIONS = new Set(['--version', '-v']);
 const LANGUAGE_OPTIONS = new Set(['--language', '-l']);
 const COMMAND_ALIASES = new Map([
+  ['app:serve', 'app:dev'],
   ['lit-component:serve', 'component:dev'],
   ['lit-components:serve', 'component:dev'],
   ['lit-component:test', 'component:test'],
