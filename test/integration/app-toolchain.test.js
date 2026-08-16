@@ -376,6 +376,59 @@ test('red: legacy runtime reloads the selected nested config before a full HMR r
   assert.deepEqual(invalidated.sort(), [path.join(root, 'app/config/app.config.js'), path.join(root, 'app/scripts/app-bootstrap.js')].sort());
 });
 
+test('red: legacy runtime watches and reloads a changed CommonJS base configuration', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'open-cells-commonjs-hmr-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await writeFile(path.join(root, 'package.json'), '{"name":"commonjs-hmr","private":true}\n');
+  await mkdir(path.join(root, 'app', 'config', 'co', 'base'), { recursive: true });
+  await writeFile(path.join(root, 'app', 'index.html'), '<main></main>\n');
+  await mkdir(path.join(root, 'app', 'scripts'), { recursive: true });
+  await writeFile(path.join(root, 'app', 'scripts', 'app-bootstrap.js'), '(function () { window.AppConfig = {}; }());\n');
+  await writeFile(path.join(root, 'app', 'config', 'co', 'base', 'environment.js'), 'module.exports = { environment: "de" };\n');
+  await writeFile(path.join(root, 'app', 'config', 'co', 'web-dev.js'), 'module.exports = { ...require("./base/environment.js"), lang: "es-CO" };\n');
+  const session = await WorkspaceSession.open(root, new NodeFilesystem());
+  const initial = await loadCellsConfig(session, 'co/web-dev.js');
+  const { createLegacyAppPlugins } = await import('../../src/adapters/vite/legacy-app-runtime.js');
+  const plugin = (await createLegacyAppPlugins(Object.freeze({ session, configName: 'co/web-dev.js', config: initial })))
+    .find(candidate => candidate.name === 'open-cells-legacy-config');
+  const watched = [];
+  const server = {
+    watcher: { add(paths) { watched.push(...paths); } },
+    ws: { send() {} },
+    moduleGraph: { getModuleById() { return undefined; }, invalidateModule() {} }
+  };
+  plugin.configureServer(server);
+  const dependency = path.join(root, 'app', 'config', 'co', 'base', 'environment.js');
+  await writeFile(dependency, 'module.exports = { environment: "qa" };\n');
+
+  await plugin.handleHotUpdate({ file: dependency, server });
+  const bootstrap = await plugin.transform('(function () { window.AppConfig = {}; }());\n', path.join(root, 'app', 'scripts', 'app-bootstrap.js'));
+
+  assert.equal(watched.includes(dependency), true);
+  assert.match(bootstrap.code, /"environment":"qa"/);
+});
+
+test('red: legacy runtime rejects an app directory replaced before an HMR recapture', async t => {
+  const { root, session } = await workspace(t);
+  const outside = await mkdtemp(path.join(os.tmpdir(), 'open-cells-external-app-'));
+  t.after(() => rm(outside, { recursive: true, force: true }));
+  await writeWorkspaceFile(root, 'app/index.html', '<main></main>\n');
+  await writeWorkspaceFile(root, 'app/tpls/index.tpl', '<html lang="##lang##"></html>\n');
+  await mkdir(path.join(outside, 'tpls'), { recursive: true });
+  await writeFile(path.join(outside, 'tpls', 'index.tpl'), '<html lang="##lang##"><body>outside</body></html>\n');
+  const config = Object.freeze({ legacy: Object.freeze({ lang: 'es' }), sourcePath: 'app/config/development.js' });
+  const { createLegacyAppPlugins } = await import('../../src/adapters/vite/legacy-app-runtime.js');
+  const plugins = await createLegacyAppPlugins(Object.freeze({ session, configName: 'development.js', config }));
+  const plugin = plugins.find(candidate => candidate.name === 'open-cells-legacy-config');
+  await rename(path.join(root, 'app'), path.join(root, 'app-owned'));
+  await symlink(outside, path.join(root, 'app'), 'dir');
+
+  await assertCode(
+    plugin.handleHotUpdate({ file: path.join(root, 'app', 'tpls', 'index.tpl'), server: {} }),
+    'PATH_CHANGED'
+  );
+});
+
 test('red: dev allows an explicit LAN bind, falls back from a non-strict occupied port, and rejects a strict one without leaking listeners', async t => {
   const { root, session } = await workspace(t);
   await writeConfig(root, 'ports.js', appConfig());

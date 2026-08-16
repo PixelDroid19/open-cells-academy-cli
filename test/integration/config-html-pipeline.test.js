@@ -72,7 +72,7 @@ test('break: config selects nested legacy server, locales, and app_properties.ap
   await writeConfig(
     root,
     'legacy.js',
-    "export default { cells_properties: { server: { port: 9090, nested: { enabled: true } }, locales: { source: 'legacy' } }, app_properties: { app: { name: 'legacy-app', title: 'Legacy' } }, server: { port: 1111 }, app: { name: 'root-app' }, locales: { source: 'root' } };"
+    "export default { cells_properties: { server: { port: 9090, nested: { enabled: true } }, locales: { source: 'legacy' }, appModules: ['@cells-demo'] }, app_properties: { app: { name: 'legacy-app', title: 'Legacy' } }, server: { port: 1111 }, app: { name: 'root-app' }, locales: { source: 'root' } };"
   );
 
   const config = await loadCellsConfig(session, 'legacy.js');
@@ -81,6 +81,7 @@ test('break: config selects nested legacy server, locales, and app_properties.ap
   assert.deepEqual(config.server, { port: 9090, nested: { enabled: true } });
   assert.deepEqual(config.app, { name: 'legacy-app', title: 'Legacy' });
   assert.deepEqual(config.locales, { source: 'legacy' });
+  assert.deepEqual(config.appModules, ['@cells-demo']);
 });
 
 test('integration: config loads a nested CommonJS market file and preserves its frozen legacy payload', async t => {
@@ -100,6 +101,25 @@ test('integration: config loads a nested CommonJS market file and preserves its 
   assert.deepEqual(config.legacy.market, { code: 'co' });
   assert.equal(Object.isFrozen(config.legacy), true);
   assert.equal(Object.isFrozen(config.legacy.market), true);
+});
+
+test('integration: CommonJS config reload invalidates contained dependencies and exposes their watch paths', async t => {
+  const { root, session } = await fixture(t, { moduleType: false });
+  await mkdir(path.join(root, 'app', 'config', 'co', 'base'), { recursive: true });
+  await writeFile(path.join(root, 'app', 'config', 'co', 'base', 'environment.js'), 'module.exports = { environment: "de" };\n');
+  await writeFile(path.join(root, 'app', 'config', 'co', 'web-dev.js'), 'module.exports = { ...require("./base/environment.js"), lang: "es-CO" };\n');
+
+  const first = await loadCellsConfig(session, 'co/web-dev.js');
+  await writeFile(path.join(root, 'app', 'config', 'co', 'base', 'environment.js'), 'module.exports = { environment: "qa" };\n');
+  const second = await loadCellsConfig(session, 'co/web-dev.js');
+
+  assert.equal(first.legacy.environment, 'de');
+  assert.equal(second.legacy.environment, 'qa');
+  assert.deepEqual(second.sourceDependencies, [
+    'app/config/co/base/environment.js',
+    'app/config/co/web-dev.js'
+  ]);
+  assert.equal(Object.isFrozen(second.sourceDependencies), true);
 });
 
 test('break: nested config directory symlinks and traversal remain outside the trusted boundary', async t => {

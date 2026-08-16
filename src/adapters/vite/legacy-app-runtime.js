@@ -22,19 +22,67 @@ function runtimeFailure(cause = undefined) {
   return typedError('LEGACY_APP_RUNTIME_INVALID', undefined, cause);
 }
 
-async function captureFile(root, relativePath, { optional = false } = {}) {
-  const candidate = path.join(root, ...relativePath.split('/'));
+async function captureDirectory(session, relativePath) {
+  const candidate = path.join(session.root, relativePath);
+  try {
+    const [workspace, directory] = await Promise.all([lstat(session.root), lstat(candidate)]);
+    if (
+      !workspace.isDirectory() ||
+      workspace.isSymbolicLink() ||
+      !sameIdentity(workspace, session.rootIdentity) ||
+      !directory.isDirectory() ||
+      directory.isSymbolicLink()
+    ) throw typedError('LEGACY_APP_RUNTIME_INVALID');
+    const [canonicalWorkspace, canonicalDirectory] = await Promise.all([realpath(session.root), realpath(candidate)]);
+    if (canonicalWorkspace !== session.root || canonicalDirectory !== candidate || !isWithin(canonicalWorkspace, canonicalDirectory)) {
+      throw typedError('LEGACY_APP_RUNTIME_INVALID');
+    }
+    return Object.freeze({
+      candidate,
+      canonicalDirectory,
+      identity: Object.freeze({ dev: directory.dev, ino: directory.ino }),
+      workspaceIdentity: session.rootIdentity,
+      workspaceRoot: session.root
+    });
+  } catch (cause) {
+    throw runtimeFailure(cause);
+  }
+}
+
+async function verifyDirectory(directory) {
+  try {
+    const [workspace, current] = await Promise.all([lstat(directory.workspaceRoot), lstat(directory.candidate)]);
+    if (
+      !workspace.isDirectory() ||
+      workspace.isSymbolicLink() ||
+      !sameIdentity(workspace, directory.workspaceIdentity) ||
+      !current.isDirectory() ||
+      current.isSymbolicLink() ||
+      !sameIdentity(current, directory.identity) ||
+      await realpath(directory.workspaceRoot) !== directory.workspaceRoot ||
+      await realpath(directory.candidate) !== directory.canonicalDirectory
+    ) throw typedError('PATH_CHANGED');
+  } catch (cause) {
+    if (cause?.code === 'PATH_CHANGED') throw cause;
+    throw typedError('PATH_CHANGED', undefined, cause);
+  }
+}
+
+async function captureFile(directory, relativePath, { optional = false } = {}) {
+  await verifyDirectory(directory);
+  const candidate = path.join(directory.candidate, ...relativePath.split('/'));
   try {
     const source = await lstat(candidate);
     if (!source.isFile() || source.isSymbolicLink()) throw typedError('LEGACY_APP_RUNTIME_INVALID');
-    const [canonicalRoot, canonicalFile] = await Promise.all([realpath(root), realpath(candidate)]);
-    if (!isWithin(canonicalRoot, canonicalFile)) throw typedError('LEGACY_APP_RUNTIME_INVALID');
+    const canonicalFile = await realpath(candidate);
+    if (!isWithin(directory.canonicalDirectory, canonicalFile)) throw typedError('LEGACY_APP_RUNTIME_INVALID');
     const content = await readFile(candidate, 'utf8');
     const current = await lstat(candidate);
     if (!current.isFile() || current.isSymbolicLink() || !sameIdentity(source, current) || await realpath(candidate) !== canonicalFile) {
       throw typedError('PATH_CHANGED');
     }
-    return Object.freeze({ candidate, canonicalFile, content, identity: Object.freeze({ dev: source.dev, ino: source.ino }) });
+    await verifyDirectory(directory);
+    return Object.freeze({ candidate, canonicalFile, content, directory, identity: Object.freeze({ dev: source.dev, ino: source.ino }) });
   } catch (cause) {
     if (optional && cause?.code === 'ENOENT') return undefined;
     throw runtimeFailure(cause);
@@ -43,6 +91,7 @@ async function captureFile(root, relativePath, { optional = false } = {}) {
 
 async function verifyFile(source) {
   try {
+    await verifyDirectory(source.directory);
     const current = await lstat(source.candidate);
     if (!current.isFile() || current.isSymbolicLink() || !sameIdentity(current, source.identity) || await realpath(source.candidate) !== source.canonicalFile) {
       throw typedError('PATH_CHANGED');
@@ -122,17 +171,19 @@ export async function createLegacyAppPlugins(request) {
   if (!isRecord(request) || !Object.isFrozen(request) || !isRecord(request.session) || !path.isAbsolute(request.session.root) || typeof request.configName !== 'string' || !isRecord(request.config) || !isRecord(request.config.legacy)) {
     throw typedError('LEGACY_APP_RUNTIME_INVALID');
   }
-  const appRoot = path.join(request.session.root, 'app');
+  const appDirectory = await captureDirectory(request.session, 'app');
+  const appRoot = appDirectory.candidate;
   let [template, bootstrap, configModule] = await Promise.all([
-    captureFile(appRoot, 'tpls/index.tpl', { optional: true }),
-    captureFile(appRoot, 'scripts/app-bootstrap.js', { optional: true }),
-    captureFile(appRoot, 'config/app.config.js', { optional: true })
+    captureFile(appDirectory, 'tpls/index.tpl', { optional: true }),
+    captureFile(appDirectory, 'scripts/app-bootstrap.js', { optional: true }),
+    captureFile(appDirectory, 'config/app.config.js', { optional: true })
   ]);
   const configModulePath = path.join(appRoot, 'config', 'app.config.js');
   const selectedConfigPath = path.join(request.session.root, ...request.config.sourcePath.split('/'));
   const templatePath = path.join(appRoot, 'tpls', 'index.tpl');
   const bootstrapPath = path.join(appRoot, 'scripts', 'app-bootstrap.js');
   let currentConfig = request.config.legacy;
+  let configDependencies = new Set((request.config.sourceDependencies ?? [request.config.sourcePath]).map(relative => path.join(request.session.root, ...relative.split('/'))));
   let configJson = serializedConfig(currentConfig);
   function invalidate(server, id) {
     const module = server?.moduleGraph?.getModuleById?.(id);
@@ -158,26 +209,28 @@ export async function createLegacyAppPlugins(request) {
     name: 'open-cells-legacy-config',
     enforce: 'pre',
     configureServer(server) {
-      server?.watcher?.add?.([selectedConfigPath, templatePath, bootstrapPath, configModulePath]);
+      server?.watcher?.add?.([...configDependencies, templatePath, bootstrapPath, configModulePath]);
     },
     async handleHotUpdate(context) {
       const changed = path.resolve(context.file);
-      if (changed === selectedConfigPath) {
+      if (configDependencies.has(changed)) {
         const next = await loadCellsConfig(request.session, request.configName);
         currentConfig = next.legacy;
         configJson = serializedConfig(currentConfig);
+        configDependencies = new Set((next.sourceDependencies ?? [next.sourcePath]).map(relative => path.join(request.session.root, ...relative.split('/'))));
+        context.server?.watcher?.add?.([...configDependencies]);
         reload(context.server);
         return [];
       }
       if (changed === templatePath) {
-        template = await captureFile(appRoot, 'tpls/index.tpl', { optional: true });
+        template = await captureFile(appDirectory, 'tpls/index.tpl', { optional: true });
         reload(context.server);
         return [];
       }
       if (changed === bootstrapPath) {
-        bootstrap = await captureFile(appRoot, 'scripts/app-bootstrap.js', { optional: true });
+        bootstrap = await captureFile(appDirectory, 'scripts/app-bootstrap.js', { optional: true });
       } else if (changed === configModulePath) {
-        configModule = await captureFile(appRoot, 'config/app.config.js', { optional: true });
+        configModule = await captureFile(appDirectory, 'config/app.config.js', { optional: true });
         reload(context.server);
         return [];
       }

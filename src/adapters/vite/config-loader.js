@@ -2,6 +2,7 @@ import { readFile, lstat, realpath, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
+import { createRequire } from 'node:module';
 
 import { normalizeRelativePath } from '../../domain/path-policy.js';
 import { typedError } from '../../domain/workspace-session.js';
@@ -61,6 +62,13 @@ function copySelectedObject(value) {
     throw new TypeError('Selected config field must be a plain object');
   }
   return cloneConfigValue(value);
+}
+
+function copyStringList(value) {
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) {
+    throw new TypeError('Selected config field must be a string array');
+  }
+  return Object.freeze([...value]);
 }
 
 function deepFreeze(value, seen = new WeakSet()) {
@@ -141,7 +149,7 @@ function optionalPlainObject(root, field, sourcePath) {
   return root[field];
 }
 
-function normalizeConfig(defaultExport, sourcePath) {
+function normalizeConfig(defaultExport, sourcePath, sourceDependencies = Object.freeze([sourcePath])) {
   try {
     if (!isPlainObject(defaultExport)) {
       throw invalidConfig(sourcePath);
@@ -153,12 +161,13 @@ function normalizeConfig(defaultExport, sourcePath) {
     const app = selectField(defaultExport, academy, legacy, 'app');
     const locales = selectField(defaultExport, academy, legacy, 'locales');
     const build = selectField(defaultExport, academy, legacy, 'build');
+    const appModules = selectField(defaultExport, academy, legacy, 'appModules');
     const normalizedServer = server === undefined ? undefined : copySelectedObject(server);
     const normalizedApp = app === undefined ? undefined : copySelectedObject(app);
     const normalizedLocales = locales === undefined ? undefined : copySelectedObject(locales);
     const normalizedBuild = build === undefined ? undefined : copySelectedObject(build);
     const normalizedPreview = normalizedServer === undefined ? undefined : cloneConfigValue(normalizedServer);
-    const record = { sourcePath, legacy: cloneConfigValue(defaultExport) };
+    const record = { sourcePath, sourceDependencies: Object.freeze([...sourceDependencies]), legacy: cloneConfigValue(defaultExport) };
     if (normalizedServer !== undefined) {
       record.server = normalizedServer;
       record.preview = normalizedPreview;
@@ -171,6 +180,9 @@ function normalizeConfig(defaultExport, sourcePath) {
     }
     if (normalizedBuild !== undefined) {
       record.build = normalizedBuild;
+    }
+    if (appModules !== undefined) {
+      record.appModules = copyStringList(appModules);
     }
     if (Object.hasOwn(defaultExport, 'serviceWorker')) {
       record.serviceWorker = copySelectedObject(defaultExport.serviceWorker);
@@ -227,6 +239,7 @@ async function verifiedConfigFile(root, sourcePath) {
     return Object.freeze({
       candidate,
       canonicalFile,
+      canonicalDirectory,
       initial: Object.freeze({ dev: initial.dev, ino: initial.ino }),
       directories: Object.freeze(directories)
     });
@@ -267,6 +280,45 @@ async function cacheTokenFor(file, sourcePath) {
   }
 }
 
+function cachedChildren(module, configDirectory, output = new Set()) {
+  if (module === undefined || output.has(module.filename)) return output;
+  if (within(configDirectory, module.filename)) output.add(module.filename);
+  for (const child of module.children ?? []) cachedChildren(child, configDirectory, output);
+  return output;
+}
+
+function clearCommonJsConfigCache(requireFromProject, configDirectory) {
+  for (const fileName of Object.keys(requireFromProject.cache)) {
+    if (within(configDirectory, fileName)) delete requireFromProject.cache[fileName];
+  }
+}
+
+async function commonJsConfig(session, file, sourcePath) {
+  const requireFromProject = createRequire(path.join(session.root, 'package.json'));
+  clearCommonJsConfigCache(requireFromProject, file.canonicalDirectory);
+  let resolved;
+  try {
+    resolved = requireFromProject.resolve(file.canonicalFile);
+    const exported = requireFromProject(resolved);
+    const defaultExport = exported !== null && typeof exported === 'object' && exported.__esModule === true && Object.hasOwn(exported, 'default')
+      ? exported.default
+      : exported;
+    const dependencyFiles = [...cachedChildren(requireFromProject.cache[resolved], file.canonicalDirectory)].sort();
+    const dependencies = [];
+    for (const dependency of dependencyFiles) {
+      const current = await lstat(dependency);
+      if (!current.isFile() || current.isSymbolicLink()) throw new TypeError('Invalid config dependency');
+      const canonical = await realpath(dependency);
+      if (canonical !== dependency || !within(file.canonicalDirectory, canonical)) throw new TypeError('Config dependency escaped');
+      dependencies.push(path.relative(session.root, canonical).split(path.sep).join('/'));
+    }
+    return Object.freeze({ defaultExport, dependencies: Object.freeze(dependencies.sort()) });
+  } catch (cause) {
+    if (cause?.code === 'ERR_REQUIRE_ESM' || cause?.code === 'ERR_REQUIRE_ASYNC_MODULE') return undefined;
+    throw invalidConfig(sourcePath);
+  }
+}
+
 /**
  * Loads a trusted project configuration module. Config execution is not
  * sandboxed: import/evaluation failures are reported as trusted project
@@ -276,14 +328,24 @@ export async function loadCellsConfig(session, configName) {
   assertSession(session);
   const sourcePath = sourcePathFromName(configName);
   const file = await verifiedConfigFile(session.root, sourcePath);
-  let imported;
+  let defaultExport;
+  let dependencies = Object.freeze([sourcePath]);
   try {
     const cacheToken = await cacheTokenFor(file, sourcePath);
     await assertUnchanged(file, sourcePath);
-    imported = await import(`${pathToFileURL(file.canonicalFile).href}?academyConfig=${encodeURIComponent(cacheToken)}`);
+    const commonJs = sourcePath.endsWith('.js') && session.packageMetadata?.type !== 'module'
+      ? await commonJsConfig(session, file, sourcePath)
+      : undefined;
+    if (commonJs === undefined) {
+      const imported = await import(`${pathToFileURL(file.canonicalFile).href}?academyConfig=${encodeURIComponent(cacheToken)}`);
+      defaultExport = imported.default;
+    } else {
+      defaultExport = commonJs.defaultExport;
+      dependencies = commonJs.dependencies;
+    }
   } catch (cause) {
     throw invalidConfig(sourcePath);
   }
   await assertUnchanged(file, sourcePath);
-  return normalizeConfig(imported.default, sourcePath);
+  return normalizeConfig(defaultExport, sourcePath, dependencies);
 }
