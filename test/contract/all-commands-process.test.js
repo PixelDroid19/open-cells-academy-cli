@@ -422,6 +422,41 @@ test('contract: app:locales --config honors the Cells locales configuration', as
   assert.equal(JSON.stringify(generated).includes('Hello'), true);
 });
 
+test('contract: app:locales supports established locales-app sources and intlInputFileNames', async t => {
+  const root = await workspace(t);
+  await mkdir(path.join(root, 'app'), { recursive: true });
+  await writeFile(path.join(root, 'app', 'index.html'), '<main></main>\n');
+  await writeFile(
+    path.join(root, 'app', 'config', 'market.js'),
+    'export default { locales: { enabledI18n: true, languages: ["en", "en-US", "es"], intlInputFileNames: ["locales"], intlFileName: "locales" } };\n'
+  );
+  await mkdir(path.join(root, 'app', 'locales-app'), { recursive: true });
+  await writeFile(path.join(root, 'app', 'locales-app', 'en.json'), '{"hello":"Hello","shared":"application"}\n');
+  await writeFile(path.join(root, 'app', 'locales-app', 'es.json'), '{"hello":"Hola"}\n');
+  await mkdir(path.join(root, 'components', 'card', 'locales'), { recursive: true });
+  await writeFile(path.join(root, 'components', 'card', 'locales', 'en.json'), '{"componentOnly":"Card","shared":"component"}\n');
+  await mkdir(path.join(root, 'dist', 'locales'), { recursive: true });
+  await writeFile(path.join(root, 'dist', 'locales', 'stale.json'), '{"stale":true}\n');
+  const api = createFakeToolApi();
+  const { dispatch } = resolveDispatch({ api, cwd: root });
+  const cli = registryFor(dispatch);
+
+  const result = await cli.run(['app:locales', '--config', 'market.js'], { env: {} });
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  await assert.rejects(readFile(path.join(root, 'dist', 'locales', 'stale.json')), error => error?.code === 'ENOENT');
+  assert.deepEqual(JSON.parse(await readFile(path.join(root, 'dist', 'locales', 'en-US.json'), 'utf8')), {
+    componentOnly: 'Card',
+    hello: 'Hello',
+    shared: 'application'
+  });
+  assert.deepEqual(JSON.parse(await readFile(path.join(root, 'dist', 'locales', 'locales.json'), 'utf8')), {
+    en: { componentOnly: 'Card', hello: 'Hello', shared: 'application' },
+    'en-US': { componentOnly: 'Card', hello: 'Hello', shared: 'application' },
+    es: { hello: 'Hola' }
+  });
+});
+
 test('contract: dev/build/preview/component:dev/component:build:demo dispatch to the toolchains (tools present)', async t => {
   const root = await workspace(t);
   await mkdir(path.join(root, 'app'), { recursive: true });

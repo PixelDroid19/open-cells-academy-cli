@@ -79,6 +79,14 @@ function normalizedLanguages(value) {
   return Object.freeze([...new Set(languages)].sort(compareText));
 }
 
+function normalizedInputFileNames(value) {
+  if (value === undefined) return Object.freeze(['locales']);
+  if (!Array.isArray(value) || value.some(name => typeof name !== 'string' || !FILE_NAME.test(name))) {
+    throw typedError('LOCALES_CONFIG_INVALID', { field: 'intlInputFileNames' });
+  }
+  return Object.freeze([...new Set(value)].sort(compareText));
+}
+
 function normalizedIdentifier(value, field) {
   if (typeof value !== 'string' || !IDENTIFIER.test(value)) {
     throw typedError('LOCALES_CONFIG_INVALID', { field });
@@ -90,7 +98,7 @@ function normalizeAppConfig(value) {
   if (!isRecord(value)) {
     throw typedError('LOCALES_CONFIG_INVALID', { field: 'config' });
   }
-  const allowed = new Set(['enabledI18n', 'intlFileName', 'intlFileVersion', 'languages', 'useBundles', 'pagesPath', 'initialPages', 'initialBundle']);
+  const allowed = new Set(['enabledI18n', 'intlFileName', 'intlFileVersion', 'intlInputFileNames', 'languages', 'useBundles', 'pagesPath', 'initialPages', 'initialBundle']);
   if (Object.keys(value).some(field => !allowed.has(field))) {
     throw typedError('LOCALES_CONFIG_INVALID', { field: 'config' });
   }
@@ -123,6 +131,7 @@ function normalizeAppConfig(value) {
     enabledI18n: value.enabledI18n ?? true,
     intlFileName: value.intlFileName,
     intlFileVersion: value.intlFileVersion ?? 1,
+    intlInputFileNames: normalizedInputFileNames(value.intlInputFileNames),
     languages: normalizedLanguages(value.languages),
     useBundles,
     pagesPath: normalizedRelativePath(value.pagesPath ?? 'pages', 'pagesPath'),

@@ -18,6 +18,7 @@ import { PublicPackageManager } from '../adapters/node/public-package-manager.js
 import { GitAdapter } from '../adapters/node/git-adapter.js';
 import { AtomicTextDocuments } from '../adapters/node/atomic-text-documents.js';
 import { AppToolchain } from '../adapters/vite/app-toolchain.js';
+import { discoverAppLocaleSources } from '../adapters/vite/locale-discovery.js';
 import { ComponentToolchain } from '../adapters/vite/component-toolchain.js';
 import { ServiceWorker } from '../adapters/workbox/service-worker.js';
 import { SassCompiler } from '../adapters/sass/sass-compiler.js';
@@ -384,30 +385,6 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
     env: Object.freeze({ ...env })
   });
 
-  async function discoverAppLocaleSources(sessionRoot) {
-    const appRoot = path.join(sessionRoot, 'app');
-    const found = [];
-    async function visit(dir) {
-      let entries;
-      try {
-        entries = await readdir(dir, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const entry of entries) {
-        if (entry.isSymbolicLink() || entry.name === 'node_modules') continue;
-        const candidate = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          await visit(candidate);
-        } else if (entry.isFile() && entry.name.endsWith('.json') && path.basename(path.dirname(candidate)) === 'locales') {
-          found.push(path.relative(sessionRoot, candidate).split(path.sep).join('/'));
-        }
-      }
-    }
-    await visit(appRoot);
-    return Object.freeze([...new Set(found)].sort());
-  }
-
   const localePublisher = Object.freeze({
     async publish(activeSession, plan, publishOptions) {
       for (const file of ScaffoldPlan.snapshot(plan).files) {
@@ -418,6 +395,25 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
         const content = typeof file.content === 'string' ? file.content : Buffer.from(file.content).toString('utf8');
         await documents.writeAtomically(activeSession, segments.join('/'), content, { replace: true, signal: publishOptions?.signal });
       }
+    }
+  });
+
+  const appLocalePublisher = Object.freeze({
+    async publish(activeSession, plan, publishOptions) {
+      let localePlan = ScaffoldPlan.empty();
+      for (const file of ScaffoldPlan.snapshot(plan).files) {
+        if (!file.path.startsWith('dist/locales/')) throw typedError('LOCALES_REQUEST_INVALID');
+        localePlan = localePlan.addFile(file.path.slice('dist/locales/'.length), file.content, file.mode === undefined ? undefined : { mode: file.mode });
+      }
+      const dist = path.join(activeSession.root, 'dist');
+      try {
+        const current = await lstat(dist);
+        if (!current.isDirectory() || current.isSymbolicLink()) throw typedError('DESTINATION_PARENT_INVALID');
+      } catch (cause) {
+        if (cause?.code !== 'ENOENT') throw cause;
+        await filesystem.applyPlanAtomically(activeSession, ScaffoldPlan.empty(), 'dist', { signal: publishOptions?.signal });
+      }
+      return filesystem.applyPlanAtomically(activeSession, localePlan, 'dist/locales', { replace: true, signal: publishOptions?.signal });
     }
   });
 
@@ -498,11 +494,12 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
       : async () => {
         const { loadCellsConfig } = await import('../adapters/vite/config-loader.js');
         const config = await loadCellsConfig(session, optionOf(parsed, 'config'));
+        const localeSources = await discoverAppLocaleSources(session.root, config.locales);
         return generateAppLocales(Object.freeze({
           session,
           filesystem,
-          request: Object.freeze({ config: config.locales, appLocaleFiles: await discoverAppLocaleSources(session.root), signal: undefined }),
-          publisher: localePublisher
+          request: Object.freeze({ config: config.locales, ...localeSources, signal: undefined }),
+          publisher: appLocalePublisher
         }));
       };
     const useCase = component ? testComponent : testApp;
@@ -537,11 +534,12 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
     } else {
       const { loadCellsConfig } = await import('../adapters/vite/config-loader.js');
       const config = await loadCellsConfig(session, optionOf(parsed, 'config'));
+      const localeSources = await discoverAppLocaleSources(session.root, config.locales);
       result = await generateAppLocales(Object.freeze({
         session,
         filesystem,
-        request: Object.freeze({ config: config.locales, appLocaleFiles: await discoverAppLocaleSources(session.root), signal: undefined }),
-        publisher: localePublisher
+        request: Object.freeze({ config: config.locales, ...localeSources, signal: undefined }),
+        publisher: appLocalePublisher
       }));
     }
     return asOutcome(result);
@@ -595,28 +593,26 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
   async function handleBuildApp(tools, parsed, session) {
     if (tools.app === undefined) return toolMissing('vite');
     const context = baseContext(session);
-    const swConfig = await (async () => {
-      try {
-        const { loadCellsConfig } = await import('../adapters/vite/config-loader.js');
-        const config = await loadCellsConfig(session, optionOf(parsed, 'config'));
-        const sw = config.serviceWorker ?? config.enable_sw;
-        if (sw === undefined || sw === false || sw === null) return undefined;
-        if (sw === true || typeof sw === 'object') {
-          if (tools.workbox === undefined) return undefined;
-          const mode = sw === true ? 'generateSW' : sw.mode ?? 'generateSW';
-          if (mode !== 'generateSW' && mode !== 'injectManifest') return undefined;
-          return Object.freeze({ mode, adapter: tools.workbox, options: Object.freeze({ ...((sw === true ? {} : sw.options) ?? {}) }) });
-        }
-        return undefined;
-      } catch {
-        return undefined;
+    const { loadCellsConfig } = await import('../adapters/vite/config-loader.js');
+    const config = await loadCellsConfig(session, optionOf(parsed, 'config'));
+    const localeSources = await discoverAppLocaleSources(session.root, config.locales);
+    const sw = config.serviceWorker ?? config.enable_sw;
+    const swConfig = (() => {
+      if (sw === undefined || sw === false || sw === null) return undefined;
+      if (sw === true || typeof sw === 'object') {
+        if (tools.workbox === undefined) return undefined;
+        const mode = sw === true ? 'generateSW' : sw.mode ?? 'generateSW';
+        if (mode !== 'generateSW' && mode !== 'injectManifest') return undefined;
+        return Object.freeze({ mode, adapter: tools.workbox, options: Object.freeze({ ...((sw === true ? {} : sw.options) ?? {}) }) });
       }
+      return undefined;
     })();
     const result = await buildApp(Object.freeze({
       ...context,
       toolchain: tools.app,
       configName: optionOf(parsed, 'config'),
       options: Object.freeze({ sourceMap: boolOption(parsed, 'sourceMap'), sassLogLevel: optionOf(parsed, 'sassLogLevel') }),
+      localeRequest: Object.freeze({ ...localeSources }),
       serviceWorker: swConfig
     }));
     return asOutcome(result);
