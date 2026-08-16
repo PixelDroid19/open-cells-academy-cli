@@ -7,6 +7,7 @@ import { createRequire as createRequireDefault } from 'node:module';
 import { fail, ok } from '../domain/outcome.js';
 import { ScaffoldPlan } from '../domain/scaffold-plan.js';
 import { normalizeRelativePath } from '../domain/path-policy.js';
+import { testRunnerForManifest } from '../domain/test-runner-policy.js';
 import { WorkspaceSession, typedError } from '../domain/workspace-session.js';
 import { NodeFilesystem } from '../adapters/node/node-filesystem.js';
 import { isWithin, sameIdentity } from '../adapters/vite/stage-capture.js';
@@ -232,6 +233,14 @@ async function projectTestExecutable(sessionRoot, name) {
     return stats.isFile() ? executable : undefined;
   } catch {
     return undefined;
+  }
+}
+
+async function projectTestRunner(sessionRoot) {
+  try {
+    return testRunnerForManifest(JSON.parse(await readFile(path.join(sessionRoot, 'package.json'), 'utf8')));
+  } catch {
+    return 'vitest';
   }
 }
 
@@ -466,7 +475,11 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
   }
 
   async function handleTest(tools, parsed, session, component) {
-    const wtrRequested = boolOption(parsed, 'wtr');
+    const wtrProvided = isRecord(parsed.providedOptions) && Object.hasOwn(parsed.providedOptions, 'wtr');
+    const runnerName = wtrProvided
+      ? (parsed.providedOptions.wtr === true ? 'wtr' : 'vitest')
+      : await projectTestRunner(session.root);
+    const wtrRequested = runnerName === 'wtr';
     let runner = wtrRequested ? tools.wtr : tools.vitest;
     if (runner === undefined) return toolMissing('testing');
     const projectExecutable = await projectTestExecutable(session.root, wtrRequested ? 'wtr' : 'vitest');
@@ -501,7 +514,7 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
       env: Object.freeze(Object.fromEntries(Object.entries(process.env).filter(([, value]) => typeof value === 'string'))),
       updateLocales,
       options: Object.freeze({
-        wtr: boolOption(parsed, 'wtr'),
+        wtr: wtrRequested,
         watch: boolOption(parsed, 'watch'),
         updateSnapshots: boolOption(parsed, 'updateSnapshots'),
         updateLocales: boolOption(parsed, 'updateLocales'),

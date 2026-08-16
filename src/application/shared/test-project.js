@@ -76,6 +76,9 @@ function outcomeFromResult(result, guards) {
   if (result?.ok === true) {
     return ok(Object.freeze({ passed: result.data?.passed ?? 0, failures: result.data?.failures ?? 0 }));
   }
+  if (result?.code === 'TEST_NO_TESTS') {
+    return fail('TEST_NO_TESTS', 'testNoTests', Object.freeze({}));
+  }
   return fail(result?.code ?? 'TEST_FAILED', 'testFailed', Object.freeze({ failures: result?.params?.failures ?? 0 }));
 }
 

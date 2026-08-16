@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { typedError } from '../../domain/workspace-session.js';
+import { discoverProjectTestFiles } from './test-files.js';
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -58,7 +59,9 @@ export class VitestBrowserRunner {
 
   async run(request) {
     assertRequest(request);
-    const args = request.watch === true ? ['watch'] : ['run'];
+    const testFiles = await discoverProjectTestFiles(request.session.root);
+    if (testFiles.length === 0) return Object.freeze({ ok: false, code: 'TEST_NO_TESTS', params: Object.freeze({}) });
+    const args = request.watch === true ? ['watch', ...testFiles] : ['run', ...testFiles];
     if (request.updateSnapshots === true) args.push('--update');
     if (request.coverage === true) args.push('--coverage');
     const cwd = request.session.root;

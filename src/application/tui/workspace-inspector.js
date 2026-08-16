@@ -1,21 +1,6 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
-
-function detectTestRunner(manifest) {
-  const scripts = manifest?.scripts;
-  if (scripts === null || typeof scripts !== 'object' || Array.isArray(scripts)) {
-    return 'vitest';
-  }
-
-  const usesWtr = Object.entries(scripts).some(([name, command]) => {
-    if (!name.startsWith('test') || typeof command !== 'string') {
-      return false;
-    }
-    return name.split(':').includes('wtr') || /(?:^|\s)--wtr(?:\s|$)/.test(command);
-  });
-
-  return usesWtr ? 'wtr' : 'vitest';
-}
+import { testRunnerForManifest } from '../../domain/test-runner-policy.js';
 
 /**
  * Non-destructively inspects a workspace directory to determine its OpenCells project type and configuration.
@@ -49,7 +34,7 @@ export async function inspectWorkspace(cwd = process.cwd()) {
         name,
         type: 'app',
         root,
-        testRunner: detectTestRunner(manifest),
+        testRunner: testRunnerForManifest(manifest),
         appConfigs: Object.freeze(appConfigs),
         defaultAppConfig,
         defaultBuildConfig
@@ -65,7 +50,7 @@ export async function inspectWorkspace(cwd = process.cwd()) {
         name,
         type: 'component',
         root,
-        testRunner: detectTestRunner(manifest)
+        testRunner: testRunnerForManifest(manifest)
       });
     }
   } catch {}
@@ -78,7 +63,7 @@ export async function inspectWorkspace(cwd = process.cwd()) {
         name,
         type: 'app',
         root,
-        testRunner: detectTestRunner(manifest),
+        testRunner: testRunnerForManifest(manifest),
         appConfigs: Object.freeze([]),
         defaultAppConfig: undefined,
         defaultBuildConfig: undefined
@@ -89,7 +74,7 @@ export async function inspectWorkspace(cwd = process.cwd()) {
         name,
         type: 'component',
         root,
-        testRunner: detectTestRunner(manifest)
+        testRunner: testRunnerForManifest(manifest)
       });
     }
   } catch {}

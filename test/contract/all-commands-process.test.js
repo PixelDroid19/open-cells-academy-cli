@@ -349,7 +349,39 @@ test('contract: app:test and component:test forward --coverage to the Vitest run
     assert.equal(result.exitCode, 0, result.stderr);
   }
 
-  assert.deepEqual(requests.map(request => request.args), [['run', '--coverage'], ['run', '--coverage']]);
+  assert.deepEqual(requests.map(request => request.args), [
+    ['run', 'test/a.test.js', '--coverage'],
+    ['run', 'test/a.test.js', '--coverage']
+  ]);
+});
+
+test('contract: app:test detects a declared WTR project while explicit --no-wtr keeps Vitest', async t => {
+  const root = await workspace(t);
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({
+    name: 'composition-fixture',
+    private: true,
+    type: 'module',
+    scripts: { test: 'cells app:test --wtr' }
+  }));
+  await mkdir(path.join(root, 'test', 'unit'), { recursive: true });
+  await writeFile(path.join(root, 'test', 'unit', 'a.test.js'), 'it("passes", () => {});\n');
+  await mkdir(path.join(root, 'node_modules', '@web', 'test-runner-playwright'), { recursive: true });
+  await writeFile(path.join(root, 'node_modules', '@web', 'test-runner-playwright', 'package.json'), '{"name":"@web/test-runner-playwright","version":"0.0.0"}\n');
+  const api = createFakeToolApi({ testing: { exitCode: 0 } });
+  const requests = [];
+  const runProcess = api.testing.runProcess.bind(api.testing);
+  api.testing.runProcess = async request => {
+    requests.push(request);
+    return runProcess(request);
+  };
+  const { dispatch } = resolveDispatch({ api, cwd: root });
+  const cli = registryFor(dispatch);
+
+  assert.equal((await cli.run(['app:test'], { env: {} })).exitCode, 0);
+  assert.equal((await cli.run(['app:test', '--no-wtr'], { env: {} })).exitCode, 0);
+
+  assert.equal(requests[0].args.includes('--config'), true);
+  assert.equal(requests[1].args[0], 'run');
 });
 
 test('contract: component:test --updateLocales regenerates locale artifacts before testing', async t => {

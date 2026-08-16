@@ -3,6 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { typedError } from '../../domain/workspace-session.js';
+import { discoverProjectTestFiles } from './test-files.js';
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -36,7 +37,7 @@ function outcome(result) {
   return Object.freeze({ ok: false, code: 'TEST_FAILED', params: summaryFrom(result) });
 }
 
-function configSource(launcherSpecifier, browserExecutable, junitSpecifier) {
+function configSource(launcherSpecifier, browserExecutable, junitSpecifier, testFiles) {
   const launcherOptions = typeof browserExecutable === 'string' && browserExecutable.length > 0
     ? `{ product: 'chromium', launchOptions: { executablePath: ${JSON.stringify(browserExecutable)} } }`
     : `{ product: 'chromium' }`;
@@ -48,7 +49,7 @@ function configSource(launcherSpecifier, browserExecutable, junitSpecifier) {
 
 export default {
   nodeResolve: true,
-  files: ['test/**/*.test.js'],
+  files: ${JSON.stringify(testFiles)},
   testFramework: { config: { ui: 'tdd' } },
   browsers: [playwrightLauncher(${launcherOptions})],
   coverageConfig: { reportDir: 'test/coverage' },
@@ -96,6 +97,8 @@ export class WtrRunner {
   async run(request) {
     assertRequest(request);
     const cwd = request.session.root;
+    const testFiles = await discoverProjectTestFiles(cwd);
+    if (testFiles.length === 0) return Object.freeze({ ok: false, code: 'TEST_NO_TESTS', params: Object.freeze({}) });
     const configPath = path.join(cwd, 'wtr.academy.config.mjs');
     const launcherSpecifier = (await projectHasPackage(cwd, '@web/test-runner-playwright'))
       ? '@web/test-runner-playwright'
@@ -110,7 +113,7 @@ export class WtrRunner {
         : pathToFileURL(this.#junitEntry).href;
     try {
       await mkdir(path.join(cwd, 'test', 'coverage'), { recursive: true });
-      await writeFile(configPath, configSource(launcherSpecifier, request.browserExecutable, junitSpecifier));
+      await writeFile(configPath, configSource(launcherSpecifier, request.browserExecutable, junitSpecifier, testFiles));
     } catch (cause) {
       throw typedError('TEST_ARTIFACT_FAILED', undefined, cause);
     }

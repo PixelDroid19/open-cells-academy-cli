@@ -58,6 +58,33 @@ test('red: test project runs Vitest green and reports pass with target-local art
   assert.match(junit, /testsuite/);
 });
 
+test('red: Vitest receives only project-owned unit files and never vendored or E2E dependency tests', async t => {
+  const { root, session } = await workspace(t);
+  await writeWorkspaceFile(root, 'test/unit/owned.test.js', 'it("owned", () => {});\n');
+  await writeWorkspaceFile(root, 'test/e2e/node_modules/vendor/leaked.test.js', 'it("vendor", () => {});\n');
+  await writeWorkspaceFile(root, 'components/vendor/examples/leaked.test.js', 'it("component vendor", () => {});\n');
+  const fake = createFakeTestToolchain();
+
+  const outcome = await testProject(testContext(session, new VitestBrowserRunner(fake)));
+
+  assert.equal(outcome.ok, true);
+  assert.equal(fake.vitestLast.args.includes('test/unit/owned.test.js'), true);
+  assert.equal(fake.vitestLast.args.some(argument => argument.includes('node_modules') || argument.includes('components/vendor') || argument.includes('test/e2e')), false);
+});
+
+test('red: a legacy app without project-owned unit files reports TEST_NO_TESTS without launching Vitest', async t => {
+  const { root, session } = await workspace(t);
+  await writeWorkspaceFile(root, 'components/vendor/examples/leaked.test.js', 'it("component vendor", () => {});\n');
+  await writeWorkspaceFile(root, 'test/e2e/node_modules/vendor/leaked.test.js', 'it("e2e vendor", () => {});\n');
+  const fake = createFakeTestToolchain();
+
+  const outcome = await testProject(testContext(session, new VitestBrowserRunner(fake)));
+
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.code, 'TEST_NO_TESTS');
+  assert.equal(fake.vitestCalls, 0);
+});
+
 test('red: test project fails on assertion, import, unhandled-error, and no-test runs with real exit codes', async t => {
   const { root, session } = await workspace(t);
   const filesystem = new NodeFilesystem();
