@@ -1,4 +1,4 @@
-import { lstat, mkdir, readdir, realpath } from 'node:fs/promises';
+import { constants as fsConstants, lstat, mkdir, open, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 
 import { typedError } from '../../domain/workspace-session.js';
@@ -105,6 +105,21 @@ export async function discoverProjectTestFiles(root) {
   return (await captureProjectTestFiles(root)).files;
 }
 
+async function mkdirBelowGuard(guard, name) {
+  await verifyGuard(guard);
+  if (process.platform === 'linux' && Number.isInteger(fsConstants.O_DIRECTORY) && Number.isInteger(fsConstants.O_NOFOLLOW)) {
+    const handle = await open(guard.candidate, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
+    try {
+      await mkdir(`/proc/self/fd/${handle.fd}/${name}`, { recursive: false, mode: 0o700 });
+    } finally {
+      await handle.close();
+    }
+  } else {
+    await mkdir(path.join(guard.candidate, name), { recursive: false, mode: 0o700 });
+  }
+  await verifyGuard(guard);
+}
+
 export async function prepareTestArtifacts(root, capturedTests) {
   if (capturedTests === null || typeof capturedTests !== 'object' || typeof capturedTests.verify !== 'function') {
     throw typedError('TEST_ARTIFACT_FAILED');
@@ -112,10 +127,14 @@ export async function prepareTestArtifacts(root, capturedTests) {
   try {
     await capturedTests.verify();
     const testRoot = path.join(root, 'test');
+    if (await status(testRoot) === undefined) {
+      const rootGuard = await captureGuard(root, 'directory', root);
+      await mkdirBelowGuard(rootGuard, 'test');
+    }
     const testGuard = await captureGuard(testRoot, 'directory', root);
     const coverageRoot = path.join(testRoot, 'coverage');
     const coverageStatus = await status(coverageRoot);
-    if (coverageStatus === undefined) await mkdir(coverageRoot, { recursive: false, mode: 0o700 });
+    if (coverageStatus === undefined) await mkdirBelowGuard(testGuard, 'coverage');
     const coverageGuard = await captureGuard(coverageRoot, 'directory', root);
     await capturedTests.verify();
     return Object.freeze({

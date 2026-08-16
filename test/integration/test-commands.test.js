@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -83,6 +83,27 @@ test('red: a legacy app without project-owned unit files reports TEST_NO_TESTS w
   assert.equal(outcome.ok, false);
   assert.equal(outcome.code, 'TEST_NO_TESTS');
   assert.equal(fake.vitestCalls, 0);
+});
+
+test('red: app/test-only projects provision guarded project-local artifacts for Vitest and WTR', async t => {
+  const { root, session } = await workspace(t);
+  await writeWorkspaceFile(root, 'app/test/unit/owned.test.js', 'it("owned", () => {});\n');
+  const vitest = createFakeTestToolchain();
+  const wtr = createFakeTestToolchain();
+
+  const vitestResult = await new VitestBrowserRunner(vitest).run(Object.freeze({ session }));
+  const wtrResult = await new WtrRunner(
+    wtr,
+    'web-test-runner',
+    path.join(root, 'cli-launcher', 'index.mjs'),
+    path.join(root, 'cli-junit', 'index.mjs')
+  ).run(Object.freeze({ session }));
+
+  assert.equal(vitestResult.ok, true);
+  assert.equal(wtrResult.ok, true);
+  assert.equal(vitest.vitestLast.args.includes('app/test/unit/owned.test.js'), true);
+  assert.equal(wtr.wtrConfigSource.includes('app/test/unit/owned.test.js'), true);
+  assert.equal((await lstat(path.join(root, 'test', 'coverage'))).isDirectory(), true);
 });
 
 test('red: test launch revalidates captured test ancestors immediately before spawning the runner', async t => {
