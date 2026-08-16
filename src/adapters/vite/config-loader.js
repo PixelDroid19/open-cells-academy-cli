@@ -123,7 +123,7 @@ function selectField(root, academy, legacy, field) {
     if (isPlainObject(root.app_properties)) {
       return Object.hasOwn(root.app_properties, 'app') ? root.app_properties.app : root.app_properties;
     }
-    return root.app;
+    return root.app === undefined || isPlainObject(root.app) ? root.app : root;
   }
   if (Object.hasOwn(legacy, field)) {
     return legacy[field];

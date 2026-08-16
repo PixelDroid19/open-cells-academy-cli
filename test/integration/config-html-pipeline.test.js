@@ -125,6 +125,24 @@ test('break: config treats legacy app_properties itself as app data when it has 
   assert.deepEqual(config.app, { name: 'legacy-direct-app', title: 'Legacy direct' });
 });
 
+test('integration: config treats a legacy string app identifier as part of root application data', async t => {
+  const { root, session } = await fixture(t);
+  await writeConfig(
+    root,
+    'legacy-root-app.js',
+    "export default { app: 'co', lang: 'es-CO', appVersion: '99.99.99', mainNode: 'app__content' };"
+  );
+
+  const config = await loadCellsConfig(session, 'legacy-root-app.js');
+
+  assert.deepEqual(config.app, {
+    app: 'co',
+    lang: 'es-CO',
+    appVersion: '99.99.99',
+    mainNode: 'app__content'
+  });
+});
+
 test('break: config falls back to documented root server, app, and locales fields', async t => {
   const { root, session } = await fixture(t);
   await writeConfig(
