@@ -82,7 +82,12 @@ function applyCreationSchemaDefaults(input, context) {
   if (!isRecord(context.creationSchemaDefaults)) {
     throw typedError('INVALID_INPUT', { field: 'scaffold' });
   }
-  return { ...input, ...context.creationSchemaDefaults };
+  for (const [field, value] of Object.entries(context.creationSchemaDefaults)) {
+    if (Object.hasOwn(input, field) && input[field] !== value) {
+      throw typedError('INVALID_INPUT', { field });
+    }
+  }
+  return { ...context.creationSchemaDefaults, ...input };
 }
 
 function normalizeNamespace(namespace) {

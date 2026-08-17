@@ -157,11 +157,54 @@ test('contract: lit-component:create selects the CLI 4 request contract without 
   assert.equal(defaultDeclaration.cellsVersion, '4');
   assert.equal(defaultDeclaration.componentBase, 'lit3');
 
+  const explicitVersion = await cli.run(
+    ['lit-component:create', '--scaffold', '{"name":"legacy-explicit","namespace":"@academy","cellsVersion":"4","componentBase":"lit1"}'],
+    { env: {} }
+  );
+  assert.equal(explicitVersion.exitCode, 0, explicitVersion.stderr);
+  const explicitDeclaration = JSON.parse(await readFile(path.join(root, 'legacy-explicit', '.open-cells-academy-recipe.json'), 'utf8'));
+  assert.equal(explicitDeclaration.cellsVersion, '4');
+  assert.equal(explicitDeclaration.componentBase, 'lit1');
+
   const duplicate = await cli.run(
     ['lit-component:create', '--scaffold', '{"name":"legacy-card","namespace":"@academy"}'],
     { env: {} }
   );
   assert.notEqual(duplicate.exitCode, 0);
+});
+
+test('contract: lit-component:create rejects every explicit non-CLI4 version before publishing inline or file scaffolds', async t => {
+  const root = await workspace(t);
+  const api = createFakeToolApi();
+  const { dispatch } = resolveDispatch({ api, cwd: root });
+  const cli = registryFor(dispatch);
+  const invalidVersions = [4, 5, null, '3', '4.9', '5', '5.1', ''];
+
+  for (const [index, cellsVersion] of invalidVersions.entries()) {
+    const inlineName = `invalid-inline-${index}`;
+    const inline = await cli.run(
+      ['lit-component:create', '--scaffold', JSON.stringify({ name: inlineName, namespace: '@academy', cellsVersion })],
+      { env: {} }
+    );
+    assert.notEqual(inline.exitCode, 0, `inline cellsVersion ${String(cellsVersion)} must fail`);
+    await assert.rejects(
+      readFile(path.join(root, inlineName, '.open-cells-academy-recipe.json'), 'utf8'),
+      { code: 'ENOENT' }
+    );
+
+    const fileName = `invalid-file-${index}`;
+    const scaffoldName = `invalid-file-scaffold-${index}.json`;
+    await writeFile(
+      path.join(root, scaffoldName),
+      `${JSON.stringify({ name: fileName, namespace: '@academy', cellsVersion })}\n`
+    );
+    const fromFile = await cli.run(['lit-component:create', '--scaffold', scaffoldName], { env: {} });
+    assert.notEqual(fromFile.exitCode, 0, `file cellsVersion ${String(cellsVersion)} must fail`);
+    await assert.rejects(
+      readFile(path.join(root, fileName, '.open-cells-academy-recipe.json'), 'utf8'),
+      { code: 'ENOENT' }
+    );
+  }
 });
 
 test('contract: app:create follows the README relative scaffold path from an empty directory', async t => {
