@@ -50,7 +50,7 @@ function packageMetadata(plan) {
 
 test('break: each application profile stops composing the exact fixed base capability order', () => {
   for (const profile of APP_PROFILES) {
-    const plan = composeRecipe(profile, { kind: 'app', name: 'teaching-app', e2e: false });
+    const plan = composeRecipe(profile, { kind: 'app', name: 'teaching-app', cellsVersion: '4', e2e: false });
 
     assert.ok(plan instanceof ScaffoldPlan);
     assert.deepEqual(capabilityOrder(plan), APP_CAPABILITIES);
@@ -63,7 +63,7 @@ test('break: recipe composition stops resolving every required immutable profile
 
   for (const definition of PROFILE_DEFINITIONS) {
     const options = definition.kind === 'app'
-      ? { kind: 'app', name: 'teaching-app' }
+      ? { kind: 'app', name: 'teaching-app', cellsVersion: '4' }
       : { kind: 'component', name: 'academy-card', namespace: '@academy' };
     const plan = composeRecipe(definition.profile, options);
 
@@ -89,7 +89,7 @@ test('break: component recipes stop composing their smaller fixed capability ord
 });
 
 test('break: an e2e request stops contributing the only conditional capability at the end', () => {
-  const application = composeRecipe('web-app', { kind: 'app', name: 'teaching-app', e2e: true });
+  const application = composeRecipe('web-app', { kind: 'app', name: 'teaching-app', cellsVersion: '4', e2e: true });
   const component = composeRecipe('component', { kind: 'component', name: 'academy-card', namespace: '@academy', e2e: true });
 
   assert.deepEqual(capabilityOrder(application), [...APP_CAPABILITIES, 'e2e-playwright']);
@@ -97,8 +97,8 @@ test('break: an e2e request stops contributing the only conditional capability a
 });
 
 test('break: equivalent declarations stop producing stable immutable recipe snapshots', () => {
-  const first = composeRecipe('academy-app', { kind: 'app', name: 'teaching-app', e2e: true });
-  const second = composeRecipe('academy-app', { kind: 'app', name: 'teaching-app', e2e: true });
+  const first = composeRecipe('academy-app', { kind: 'app', name: 'teaching-app', cellsVersion: '4', e2e: true });
+  const second = composeRecipe('academy-app', { kind: 'app', name: 'teaching-app', cellsVersion: '4', e2e: true });
 
   assert.notEqual(first, second);
   assert.deepEqual(ScaffoldPlan.snapshot(first), ScaffoldPlan.snapshot(second));
@@ -111,7 +111,7 @@ test('break: equivalent declarations stop producing stable immutable recipe snap
 });
 
 test('break: recipe package metadata stops separating dependency kinds with sorted names', () => {
-  const plan = composeRecipe('blank', { kind: 'app', name: 'teaching-app' });
+  const plan = composeRecipe('blank', { kind: 'app', name: 'teaching-app', cellsVersion: '4' });
   const metadata = packageMetadata(plan);
 
   for (const field of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
@@ -123,7 +123,7 @@ test('break: recipe package metadata stops separating dependency kinds with sort
 
 test('break: hostile user values stop being JSON data instead of executable source', () => {
   const hostileName = 'teaching-\";globalThis.compromised=true;//';
-  const plan = composeRecipe('blank', { kind: 'app', name: hostileName });
+  const plan = composeRecipe('blank', { kind: 'app', name: hostileName, cellsVersion: '4' });
   const declaration = plan.files.find(file => file.path === '.open-cells-academy-recipe.json').content;
   const metadata = packageMetadata(plan);
 
@@ -135,7 +135,7 @@ test('break: hostile user values stop being JSON data instead of executable sour
 
 test('break: conflicting capability declarations stop failing before an invalid plan can publish', () => {
   assert.throws(
-    () => composeRecipe('blank', { kind: 'app', name: 'teaching-app', capabilityOverrides: { 'lit-runtime': { lit: '^4.0.0' } } }),
+    () => composeRecipe('blank', { kind: 'app', name: 'teaching-app', cellsVersion: '4', capabilityOverrides: { 'lit-runtime': { lit: '^4.0.0' } } }),
     error => error?.code === 'PLAN_CONFLICT'
   );
 });

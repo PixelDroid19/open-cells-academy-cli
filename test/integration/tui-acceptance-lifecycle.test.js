@@ -106,7 +106,8 @@ async function scaffoldAppFixture(t) {
 
   const plan = composeRecipe('academy-app', {
     kind: 'app',
-    name: 'academy-banking-app'
+    name: 'academy-banking-app',
+    cellsVersion: '4'
   });
 
   const fileMap = new Map(plan.files.map(f => [f.path, f.content]));

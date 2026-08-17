@@ -113,7 +113,11 @@ export function unsubscribe() {}
 
   const filesystem = new NodeFilesystem();
   const session = await WorkspaceSession.open(root, filesystem);
-  const plan = composeRecipe(profile, { kind, name });
+  const plan = composeRecipe(profile, {
+    kind,
+    name,
+    ...(kind === 'app' ? { cellsVersion: '4' } : {})
+  });
   const publication = await filesystem.applyPlanAtomically(session, plan, name);
   const runtimeRoot = publication.destination;
   const facade = kind === 'app'
@@ -224,7 +228,7 @@ async function materializeDomRuntime(t) {
   await symlink(path.resolve(import.meta.dirname, '..', '..', 'node_modules'), path.join(root, 'node_modules'), 'dir');
   const filesystem = new NodeFilesystem();
   const session = await WorkspaceSession.open(root, filesystem);
-  const plan = composeRecipe('blank', { kind: 'app', name: 'academy-dom-runtime' });
+  const plan = composeRecipe('blank', { kind: 'app', name: 'academy-dom-runtime', cellsVersion: '4' });
   const publication = await filesystem.applyPlanAtomically(session, plan, 'academy-dom-runtime');
   return { root, runtimeRoot: publication.destination };
 }

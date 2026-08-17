@@ -340,6 +340,7 @@ function devConfig(session, options, appRoot) {
     plugins: mutableClone(options.plugins ?? [])
   };
   if (options.optimizeDeps !== undefined) config.optimizeDeps = mutableClone(options.optimizeDeps);
+  if (options.define !== undefined) config.define = mutableClone(options.define);
   return config;
 }
 
@@ -411,6 +412,23 @@ function isAcademyAppRecipe(contents) {
   } catch {
     return false;
   }
+}
+
+function isBridge4AppRecipe(contents) {
+  try {
+    const recipe = JSON.parse(contents);
+    return isAcademyAppRecipe(contents) && recipe.cellsVersion === '5';
+  } catch {
+    return false;
+  }
+}
+
+function bridge4ConfigDefine(source, configName) {
+  if (source.markerContent === undefined || !isBridge4AppRecipe(source.markerContent)) {
+    return undefined;
+  }
+  if (typeof configName !== 'string') throw typedError('VITE_OPTIONS_INVALID');
+  return Object.freeze({ __OPEN_CELLS_APP_CONFIG__: JSON.stringify(configName) });
 }
 
 async function captureTemplateSource(session, appRoot, markerPath = undefined) {
@@ -760,7 +778,12 @@ export class AppToolchain {
       const legacyPlugins = appSource.markerPath === undefined && options.config !== undefined
         ? await createLegacyAppPlugins(Object.freeze({ session: options.session, configName: options.configName, config: options.config }))
         : Object.freeze([]);
-      const preparedOptions = { ...options, plugins: [...legacyPlugins, ...(options.plugins ?? [])] };
+      const configDefine = bridge4ConfigDefine(appSource, options.configName);
+      const preparedOptions = {
+        ...options,
+        ...(configDefine === undefined ? {} : { define: { ...(options.define ?? {}), ...configDefine } }),
+        plugins: [...legacyPlugins, ...(options.plugins ?? [])]
+      };
       server = await this.#api.createServer(devConfig(options.session, preparedOptions, appSource.appRoot));
       if (!isRecord(server) || typeof server.listen !== 'function') throw typedError('VITE_SERVER_INVALID');
       await server.listen();
@@ -783,6 +806,7 @@ export class AppToolchain {
         root: options.root,
         base: './',
         ...cssOverride(options),
+        ...(options.define === undefined ? {} : { define: mutableClone(options.define) }),
         plugins: mutableClone(options.plugins ?? []),
         build: buildConfig(options)
       });
@@ -815,6 +839,7 @@ export class AppToolchain {
         build: request.config.build,
         sourceMap: request.options?.sourceMap,
         sassLogLevel: request.options?.sassLogLevel,
+        define: bridge4ConfigDefine(appSource, request.configName),
         plugins: Object.freeze([...legacyPlugins, ...(academyHtml === undefined ? [] : [htmlPlugin(academyHtml)])])
       }));
       await verifyAppTemplate(appSource);

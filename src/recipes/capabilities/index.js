@@ -100,7 +100,7 @@ function assertOverrides(overrides) {
 }
 
 function isBridge4Application(options) {
-  return options?.kind === 'app' && options.cellsVersion === '5' && options.cellsVersionExplicit !== false;
+  return options?.kind === 'app' && options.cellsVersion === '5';
 }
 
 /**

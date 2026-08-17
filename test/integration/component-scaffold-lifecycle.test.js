@@ -135,7 +135,7 @@ test('component recipe publishes component-only guidance and a source-specific c
     name: 'academy-card',
     namespace: '@academy'
   }));
-  const app = fileMap(composeRecipe('blank', { kind: 'app', name: 'academy-app' }));
+  const app = fileMap(composeRecipe('blank', { kind: 'app', name: 'academy-app', cellsVersion: '4' }));
   const manifest = metadata(component);
   const readme = component.get('README.md');
   const config = component.get('vite.config.js');

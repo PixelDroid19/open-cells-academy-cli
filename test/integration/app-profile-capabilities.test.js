@@ -6,7 +6,7 @@ import { composeRecipe } from '../../src/recipes/compose-recipe.js';
 const PROFILES = Object.freeze(['blank', 'web-app', 'web-mobile-app', 'academy-app']);
 
 function filesFor(profile, options = {}) {
-  const plan = composeRecipe(profile, { kind: 'app', name: `${profile}-contract`, ...options });
+  const plan = composeRecipe(profile, { kind: 'app', name: `${profile}-contract`, cellsVersion: '4', ...options });
   return new Map(plan.files.map(file => [file.path, file.content]));
 }
 

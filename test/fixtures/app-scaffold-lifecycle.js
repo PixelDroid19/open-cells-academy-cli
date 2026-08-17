@@ -78,7 +78,7 @@ async function executeCommand(commands, processRunner, label, request) {
 async function runProfile(root, profile, filesystem, processRunner, localCli, cleanBin) {
   const owner = await WorkspaceSession.open(root, filesystem);
   const projectName = `${profile}-lifecycle`;
-  const plan = composeRecipe(profile, { kind: 'app', name: projectName, localCli });
+  const plan = composeRecipe(profile, { kind: 'app', name: projectName, cellsVersion: '4', localCli });
   const publication = await filesystem.applyPlanAtomically(owner, plan, projectName);
   const project = publication.destination;
   const session = await WorkspaceSession.open(project, filesystem);

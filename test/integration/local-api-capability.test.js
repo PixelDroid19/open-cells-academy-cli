@@ -22,7 +22,7 @@ async function materializeRuntime(t) {
   await writeFile(path.join(root, 'package.json'), '{"name":"local-api-runtime","private":true}\n');
   const filesystem = new NodeFilesystem();
   const session = await WorkspaceSession.open(root, filesystem);
-  const plan = composeRecipe('blank', { kind: 'app', name: 'local-api-runtime' });
+  const plan = composeRecipe('blank', { kind: 'app', name: 'local-api-runtime', cellsVersion: '4' });
   const publication = await filesystem.applyPlanAtomically(session, plan, 'local-api-runtime');
   return publication.destination;
 }

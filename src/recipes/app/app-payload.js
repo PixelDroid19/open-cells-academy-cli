@@ -1006,7 +1006,7 @@ ${payload.routes.at(-2)?.name !== first.name ? `  await expectActiveRouteFocus(p
 }
 
 export function createApplicationPayload(profile, options = {}) {
-  if (options?.cellsVersion === '5' && options.cellsVersionExplicit !== false) {
+  if (options?.cellsVersion === '5') {
     return createBridge4ApplicationPayload(profile, options);
   }
   const { e2e = false, name = profile } = options;

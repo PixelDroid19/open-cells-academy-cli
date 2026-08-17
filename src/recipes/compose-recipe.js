@@ -46,7 +46,7 @@ function assertOptions(options) {
       throw typedError('INVALID_INPUT', { field: 'localCli' });
     }
   }
-  return Object.freeze({ ...options, cellsVersion, cellsVersionExplicit: options.cellsVersion !== undefined, e2e: options.e2e ?? false });
+  return Object.freeze({ ...options, cellsVersion, e2e: options.e2e ?? false });
 }
 
 function stableJson(value) {
@@ -64,7 +64,7 @@ function packageMetadata(options, dependencies) {
     metadata[field] = Object.fromEntries(Object.entries(buckets[field]).sort(([left], [right]) => left.localeCompare(right)));
   }
   if (options.kind === 'app') {
-    const bridge4 = options.cellsVersion === '5' && options.cellsVersionExplicit !== false;
+    const bridge4 = options.cellsVersion === '5';
     metadata.scripts = {
       'academy:version': 'cells --version',
       build: 'vite build',
@@ -112,7 +112,7 @@ function structuralFiles(options, capabilities, dependencies) {
   if (options.componentBase !== undefined) {
     declaration.componentBase = options.componentBase;
   }
-  const bridge4Application = options.kind === 'app' && options.cellsVersion === '5' && options.cellsVersionExplicit !== false;
+  const bridge4Application = options.kind === 'app' && options.cellsVersion === '5';
   let plan = ScaffoldPlan.empty()
     .addDirectory('tools')
     .addFile('.open-cells-academy-recipe.json', stableJson(declaration))

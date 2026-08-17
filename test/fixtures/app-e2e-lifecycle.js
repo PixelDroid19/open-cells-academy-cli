@@ -41,7 +41,7 @@ function withoutLocalCli(metadata) {
 async function materialize(root, profile, filesystem) {
   const owner = await WorkspaceSession.open(root, filesystem);
   const name = `${profile}-e2e`;
-  const plan = composeRecipe(profile, { kind: 'app', name, e2e: true });
+  const plan = composeRecipe(profile, { kind: 'app', name, cellsVersion: '4', e2e: true });
   const publication = await filesystem.applyPlanAtomically(owner, plan, name);
   const metadataPath = path.join(publication.destination, 'package.json');
   const metadata = withoutLocalCli(JSON.parse(await readFile(metadataPath, 'utf8')));

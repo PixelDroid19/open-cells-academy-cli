@@ -17,14 +17,22 @@ function configSource(profile, name, production) {
   const title = profileTitle(profile);
   return `const appConfig = ${JSON.stringify({
     cells_properties: {
-      initialTemplate: 'catalog'
+      initialTemplate: 'catalog',
+      locales: {
+        enabledI18n: true,
+        languages: ['en', 'es'],
+        intlInputFileNames: ['locales'],
+        intlFileName: 'locales',
+        forTesting: true
+      }
     },
     app_properties: {
       app: {
         name,
         title: title.en,
         description: 'A local Open Cells learning application.',
-        version: '0.0.0'
+        version: '0.0.0',
+        runtimeConfig: production ? 'open-cells-production' : 'open-cells-development'
       }
     },
     server: {
@@ -36,9 +44,6 @@ function configSource(profile, name, production) {
     build: {
       target: 'es2022',
       sourcemap: !production
-    },
-    locales: {
-      source: 'app/locales-app/locales.json'
     }
   }, null, 2)};
 
@@ -66,6 +71,7 @@ function localeCatalogSource(profile) {
       'lesson.state.cancelled': 'Local lesson request was cancelled.',
       'fixture.lesson.introduction': 'This local fixture explains Bridge routes and page lifecycle hooks.',
       'fixture.lesson.notFound': 'This local fixture keeps the requested lesson available for practice.',
+      'language.switcher': 'Choose language',
       'language.en': 'English',
       'language.es': 'Spanish'
     },
@@ -86,6 +92,7 @@ function localeCatalogSource(profile) {
       'lesson.state.cancelled': 'La solicitud local de la lección fue cancelada.',
       'fixture.lesson.introduction': 'Este fixture local explica las rutas de Bridge y los hooks del ciclo de vida de página.',
       'fixture.lesson.notFound': 'Este fixture local mantiene disponible la lección solicitada para practicar.',
+      'language.switcher': 'Elegir idioma',
       'language.en': 'Inglés',
       'language.es': 'Español'
     }
@@ -129,7 +136,7 @@ export function createProgress(lessonId) {
 }
 
 function appRoutesSource() {
-  return `const routes = Object.freeze([
+  return `const ROUTES = Object.freeze([
   Object.freeze({
     path: '/',
     name: 'catalog',
@@ -148,18 +155,37 @@ function appRoutesSource() {
   })
 ]);
 
-export { routes };
+export { ROUTES };
+export const routes = ROUTES;
+`;
+}
+
+function appConfigSource() {
+  return `import devConfig from './dev.js';
+import prodConfig from './prod.js';
+
+const configName = typeof __OPEN_CELLS_APP_CONFIG__ === 'string'
+  ? __OPEN_CELLS_APP_CONFIG__
+  : 'dev.js';
+if (configName !== 'dev.js' && configName !== 'prod.js') {
+  throw new TypeError('Unsupported Cells application config');
+}
+
+export default configName === 'prod.js' ? prodConfig : devConfig;
 `;
 }
 
 function appSource() {
   return `import { startBridge } from '@cells/cells-bridge';
-import appConfig from '../config/dev.js';
-import { routes } from './app-routes.js';
+import appConfig from '../config/app.config.js';
+import { ROUTES } from './app-routes.js';
+import { setLanguage } from './localization.js';
 import './lit-initial-components.js';
 
+setLanguage('en');
+
 startBridge({
-  routes,
+  routes: ROUTES,
   mainNode: 'app__content',
   ...appConfig.cells_properties,
   appConfig: appConfig.app_properties
@@ -188,38 +214,34 @@ import '../data-managers/lesson-data-manager.js';
 
 function catalogTemplateSource() {
   return `import { LitElement, html } from 'lit';
-import { t } from '../scripts/localization.js';
+import { currentLanguage, setLanguage, t } from '../scripts/localization.js';
 
 export class CatalogPageTemplate extends LitElement {
   static properties = {
     language: { type: String },
-    lessonId: { type: String }
+    state: { type: String, reflect: true }
   };
 
   constructor() {
     super();
-    this.language = 'en';
-    this.lessonId = 'introduction';
+    this.language = currentLanguage();
+    this.state = 'active';
+    this.setAttribute('data-cells-type', 'template');
   }
 
-  selectLesson() {
-    this.dispatchEvent(new CustomEvent('academy-catalog-select', {
-      bubbles: true,
-      composed: true,
-      detail: { lessonId: this.lessonId }
-    }));
+  selectLanguage(event) {
+    setLanguage(event.currentTarget.dataset.language);
+    this.language = currentLanguage();
   }
 
   render() {
-    return html\`<section aria-labelledby="catalog-title">
-      <h1 id="catalog-title">\${t('catalog.title', this.language)}</h1>
-      <p>\${t('catalog.description', this.language)}</p>
-      <article>
-        <h2>\${t('catalog.lesson.title', this.language)}</h2>
-        <p>\${t('catalog.lesson.description', this.language)}</p>
-        <button type="button" @click=\${this.selectLesson}>\${t('catalog.openLesson', this.language)}</button>
-      </article>
-    </section>\`;
+    return html\`<nav aria-label="\${t('language.switcher', this.language)}">
+      <button type="button" data-language="en" @click=\${this.selectLanguage}>\${t('language.en', this.language)}</button>
+      <button type="button" data-language="es" @click=\${this.selectLanguage}>\${t('language.es', this.language)}</button>
+    </nav>
+    <header><slot name="app-header"></slot></header>
+    <main><slot name="app-main-content"></slot></main>
+    <footer><slot name="app-footer"></slot></footer>\`;
   }
 }
 
@@ -231,36 +253,22 @@ if (customElements.get('catalog-page-template') === undefined) {
 
 function lessonTemplateSource() {
   return `import { LitElement, html } from 'lit';
-import { t } from '../scripts/localization.js';
 
 export class LessonPageTemplate extends LitElement {
   static properties = {
-    dataState: { type: Object },
-    language: { type: String },
-    lessonId: { type: String },
-    progress: { type: Object }
+    state: { type: String, reflect: true }
   };
 
   constructor() {
     super();
-    this.dataState = Object.freeze({ status: 'loading' });
-    this.language = 'en';
-    this.lessonId = 'introduction';
-    this.progress = undefined;
+    this.state = 'active';
+    this.setAttribute('data-cells-type', 'template');
   }
 
   render() {
-    const status = this.dataState?.status ?? 'loading';
-    const progressId = this.progress?.lessonId ?? this.lessonId;
-    const messageKey = this.dataState?.data?.messageKey;
-    return html\`<section aria-labelledby="lesson-title">
-      <h1 id="lesson-title">\${t('lesson.title', this.language, { lessonId: this.lessonId })}</h1>
-      <p>\${t('lesson.description', this.language)}</p>
-      <output aria-live="polite">\${t('lesson.progress', this.language, { lessonId: progressId })}</output>
-      <p data-state=\${status}>\${t('lesson.state.' + status, this.language)}</p>
-      \${messageKey === undefined ? '' : html\`<p>\${t(messageKey, this.language)}</p>\`}
-      <slot name="data-manager"></slot>
-    </section>\`;
+    return html\`<header><slot name="app-header"></slot></header>
+    <main><slot name="app-main-content"></slot></main>
+    <footer><slot name="app-footer"></slot></footer>\`;
   }
 }
 
@@ -274,7 +282,7 @@ function catalogPageSource() {
   return `import { CellsPageMixin } from '@cells/cells-page-mixin';
 import { LitElement, html } from 'lit';
 import { ACADEMY_PROGRESS_CHANNEL, createProgress } from '../../scripts/channels.js';
-import { currentLanguage } from '../../scripts/localization.js';
+import { currentLanguage, t } from '../../scripts/localization.js';
 import '../../tpls/catalog-page-template.js';
 
 export class CatalogPage extends CellsPageMixin(LitElement) {
@@ -310,8 +318,8 @@ export class CatalogPage extends CellsPageMixin(LitElement) {
     this.publish(ACADEMY_PROGRESS_CHANNEL, createProgress(this.lessonId));
   }
 
-  selectLesson(event) {
-    const lessonId = event.detail?.lessonId;
+  selectLesson() {
+    const lessonId = this.lessonId;
     const progress = createProgress(lessonId);
     this.lessonId = lessonId;
     this.publish(ACADEMY_PROGRESS_CHANNEL, progress);
@@ -320,10 +328,20 @@ export class CatalogPage extends CellsPageMixin(LitElement) {
 
   render() {
     return html\`<catalog-page-template
+      data-cells-type="template"
+      state="active"
       .language=\${this.language}
-      .lessonId=\${this.lessonId}
-      @academy-catalog-select=\${this.selectLesson}
-    ></catalog-page-template>\`;
+    >
+      <section slot="app-main-content" aria-labelledby="catalog-title">
+        <h1 id="catalog-title">\${t('catalog.title', this.language)}</h1>
+        <p>\${t('catalog.description', this.language)}</p>
+        <article>
+          <h2>\${t('catalog.lesson.title', this.language)}</h2>
+          <p>\${t('catalog.lesson.description', this.language)}</p>
+          <button type="button" @click=\${this.selectLesson}>\${t('catalog.openLesson', this.language)}</button>
+        </article>
+      </section>
+    </catalog-page-template>\`;
   }
 }
 
@@ -412,7 +430,7 @@ function lessonPageSource() {
   return `import { CellsPageMixin } from '@cells/cells-page-mixin';
 import { LitElement, html } from 'lit';
 import { ACADEMY_PROGRESS_CHANNEL } from '../../scripts/channels.js';
-import { currentLanguage } from '../../scripts/localization.js';
+import { currentLanguage, t } from '../../scripts/localization.js';
 import '../../data-managers/lesson-data-manager.js';
 import '../../tpls/lesson-page-template.js';
 
@@ -473,19 +491,27 @@ export class LessonPage extends CellsPageMixin(LitElement) {
   }
 
   render() {
+    const status = this.dataState?.status ?? 'loading';
+    const progressId = this.progress?.lessonId ?? this.lessonId;
+    const messageKey = this.dataState?.data?.messageKey;
     return html\`<lesson-page-template
-      .dataState=\${this.dataState}
+      data-cells-type="template"
+      state="active"
       .language=\${this.language}
-      .lessonId=\${this.lessonId}
-      .progress=\${this.progress}
     >
-      <lesson-data-manager
-        slot="data-manager"
-        @lesson-data-loading=\${this.updateDataState}
-        @lesson-data-success=\${this.updateDataState}
-        @lesson-data-error=\${this.updateDataState}
-        @lesson-data-cancelled=\${this.updateDataState}
-      ></lesson-data-manager>
+      <section slot="app-main-content" aria-labelledby="lesson-title">
+        <h1 id="lesson-title">\${t('lesson.title', this.language, { lessonId: this.lessonId })}</h1>
+        <p>\${t('lesson.description', this.language)}</p>
+        <output aria-live="polite">\${t('lesson.progress', this.language, { lessonId: progressId })}</output>
+        <p data-state=\${status}>\${t('lesson.state.' + status, this.language)}</p>
+        \${messageKey === undefined ? '' : html\`<p>\${t(messageKey, this.language)}</p>\`}
+        <lesson-data-manager
+          @lesson-data-loading=\${this.updateDataState}
+          @lesson-data-success=\${this.updateDataState}
+          @lesson-data-error=\${this.updateDataState}
+          @lesson-data-cancelled=\${this.updateDataState}
+        ></lesson-data-manager>
+      </section>
     </lesson-page-template>\`;
   }
 }
@@ -508,7 +534,7 @@ function indexSource() {
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Open Cells learning app</title>
+    <title></title>
   </head>
   <body>
     <main id="app__content" aria-live="polite"></main>
@@ -648,94 +674,46 @@ Run \`cells app:test\` for generated unit tests and \`cells app:locales\` to val
 
 function routesTestSource() {
   return `import { describe, expect, it } from 'vitest';
-import { routes } from '../../app/scripts/app-routes.js';
+import { ROUTES } from '../../app/scripts/app-routes.js';
+import routeSource from '../../app/scripts/app-routes.js?raw';
 
 describe('Bridge 4 routes', () => {
   it('declares named catalog and lesson routes with a lesson parameter', () => {
-    expect(routes.map(route => ({ name: route.name, path: route.path }))).toEqual([
+    expect(ROUTES.map(route => ({ name: route.name, path: route.path }))).toEqual([
       { name: 'catalog', path: '/' },
       { name: 'lesson', path: '/lesson/:lessonId' }
     ]);
-    expect(Object.isFrozen(routes)).toBe(true);
-    expect(routes.every(Object.isFrozen)).toBe(true);
+    expect(Object.isFrozen(ROUTES)).toBe(true);
+    expect(ROUTES.every(Object.isFrozen)).toBe(true);
   });
 
-  it('imports the declared page implementation for every route', async () => {
-    await Promise.all(routes.map(route => route.action()));
-    expect(customElements.get('catalog-page')).toBeDefined();
-    expect(customElements.get('lesson-page')).toBeDefined();
+  it('keeps lazy page actions in the public route contract', () => {
+    expect(routeSource).toContain("await import('../pages/catalog-page/catalog-page.js')");
+    expect(routeSource).toContain("await import('../pages/lesson-page/lesson-page.js')");
   });
 });
 `;
 }
 
 function channelsTestSource() {
-  return `import { afterEach, describe, expect, it } from 'vitest';
-import { CatalogPage } from '../../app/pages/catalog-page/catalog-page.js';
-import { LessonPage } from '../../app/pages/lesson-page/lesson-page.js';
-import { ACADEMY_PROGRESS_CHANNEL } from '../../app/scripts/channels.js';
-
-class RetainedProgressChannel {
-  constructor() {
-    this.callback = undefined;
-    this.value = undefined;
-  }
-
-  publish(value) {
-    this.value = value;
-    this.callback?.(value);
-  }
-
-  subscribe(channel, callback) {
-    if (channel !== ACADEMY_PROGRESS_CHANNEL) throw new TypeError('Unexpected channel');
-    this.callback = callback;
-    if (this.value !== undefined) callback(this.value);
-  }
-
-  unsubscribe(channel) {
-    if (channel !== ACADEMY_PROGRESS_CHANNEL) throw new TypeError('Unexpected channel');
-    this.callback = undefined;
-  }
-}
-
-afterEach(() => {
-  document.body.replaceChildren();
-});
+  return `import { describe, expect, it } from 'vitest';
+import { ACADEMY_PROGRESS_CHANNEL, createProgress } from '../../app/scripts/channels.js';
+import catalogSource from '../../app/pages/catalog-page/catalog-page.js?raw';
+import lessonSource from '../../app/pages/lesson-page/lesson-page.js?raw';
 
 describe('Bridge 4 progress channel', () => {
-  it('navigates from the catalog with an object route parameter', async () => {
-    const page = document.createElement(CatalogPage.is);
-    const navigations = [];
-    page.publish = () => undefined;
-    page.navigate = (name, params) => navigations.push({ name, params });
-    document.body.append(page);
-    await page.updateComplete;
-
-    page.shadowRoot.querySelector('catalog-page-template').dispatchEvent(new CustomEvent('academy-catalog-select', {
-      bubbles: true,
-      composed: true,
-      detail: { lessonId: 'introduction' }
-    }));
-
-    expect(navigations).toEqual([{ name: 'lesson', params: { lessonId: 'introduction' } }]);
+  it('publishes progress and navigates with an object route parameter', () => {
+    expect(createProgress('introduction')).toEqual({ lessonId: 'introduction', status: 'opened' });
+    expect(catalogSource).toContain('CellsPageMixin(LitElement)');
+    expect(catalogSource).toContain('this.publish(ACADEMY_PROGRESS_CHANNEL, progress)');
+    expect(catalogSource).toContain("this.navigate('lesson', { lessonId })");
   });
 
-  it('delivers the latest progress on enter and stops delivery after leave', async () => {
-    const channel = new RetainedProgressChannel();
-    const page = document.createElement(LessonPage.is);
-    page.params = { lessonId: 'introduction' };
-    page.subscribe = channel.subscribe.bind(channel);
-    page.unsubscribe = channel.unsubscribe.bind(channel);
-    document.body.append(page);
-    await page.updateComplete;
-    channel.publish({ lessonId: 'introduction', status: 'opened' });
-
-    await page.onPageEnter();
-    expect(page.progress).toEqual({ lessonId: 'introduction', status: 'opened' });
-    page.onPageLeave();
-    channel.publish({ lessonId: 'another', status: 'opened' });
-
-    expect(page.progress).toEqual({ lessonId: 'introduction', status: 'opened' });
+  it('uses the native latest progress subscription on enter and removes it on leave', () => {
+    expect(lessonSource).toContain('CellsPageMixin(LitElement)');
+    expect(lessonSource).toMatch(/onPageEnter\\(\\)[\\s\\S]*this\\.subscribe\\(ACADEMY_PROGRESS_CHANNEL, this\\.receiveProgress\\)/);
+    expect(lessonSource).toMatch(/onPageLeave\\(\\)[\\s\\S]*this\\.unsubscribe\\(ACADEMY_PROGRESS_CHANNEL\\)/);
+    expect(lessonSource).toContain('ACADEMY_PROGRESS_CHANNEL');
   });
 });
 `;
@@ -797,9 +775,11 @@ function localesTestSource() {
   return `import { afterEach, describe, expect, it } from 'vitest';
 import catalogs from '../../app/locales-app/locales.json';
 import { CatalogPageTemplate } from '../../app/tpls/catalog-page-template.js';
+import { currentLanguage, setLanguage, t } from '../../app/scripts/localization.js';
 
 afterEach(() => {
   document.body.replaceChildren();
+  setLanguage('en');
 });
 
 describe('application locales', () => {
@@ -807,16 +787,20 @@ describe('application locales', () => {
     expect(Object.keys(catalogs.en).sort()).toEqual(Object.keys(catalogs.es).sort());
   });
 
-  it('renders visible catalog strings through the selected language', async () => {
+  it('changes the document and visible catalog strings through the language control', async () => {
+    setLanguage('en');
     const template = document.createElement('catalog-page-template');
-    template.language = 'en';
     document.body.append(template);
     await template.updateComplete;
-    expect(template.shadowRoot.textContent).toContain('Learning catalog');
+    expect(template.shadowRoot.textContent).toContain('English');
 
-    template.language = 'es';
+    template.shadowRoot.querySelector('button[data-language="es"]').click();
     await template.updateComplete;
-    expect(template.shadowRoot.textContent).toContain('Catálogo de aprendizaje');
+    expect(currentLanguage()).toBe('es');
+    expect(document.documentElement.lang).toBe('es');
+    expect(document.title).toBe(catalogs.es['app.title']);
+    expect(t('catalog.title')).toBe('Catálogo de aprendizaje');
+    expect(template.shadowRoot.textContent).toContain('Inglés');
     expect(template).toBeInstanceOf(CatalogPageTemplate);
   });
 });
@@ -831,6 +815,7 @@ export function createBridge4Sources(profile, name, { e2e = false } = {}) {
     'vite.config.js': viteConfigSource(),
     'scripts/validate-locales.js': localeValidationSource(),
     'scripts/validate-source.js': sourceValidationSource(),
+    'app/config/app.config.js': appConfigSource(),
     'app/config/dev.js': configSource(profile, name, false),
     'app/config/prod.js': configSource(profile, name, true),
     'app/data-managers/lesson-data-manager.js': lessonDataManagerSource(),

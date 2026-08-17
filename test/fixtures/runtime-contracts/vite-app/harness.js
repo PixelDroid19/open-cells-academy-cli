@@ -84,7 +84,7 @@ export async function buildTaskFiveViteFixture(t) {
   const filesystem = new NodeFilesystem();
   await writeFile(path.join(ownedRoot, 'package.json'), '{"name":"task-five-vite-owner","private":true}\n');
   const owner = await WorkspaceSession.open(ownedRoot, filesystem);
-  const plan = composeRecipe('blank', { kind: 'app', name: 'runtime-vite-app' });
+  const plan = composeRecipe('blank', { kind: 'app', name: 'runtime-vite-app', cellsVersion: '4' });
   const published = await filesystem.applyPlanAtomically(owner, plan, 'runtime-vite-app');
   const fixture = published.destination;
   const metadataPath = path.join(fixture, 'package.json');
