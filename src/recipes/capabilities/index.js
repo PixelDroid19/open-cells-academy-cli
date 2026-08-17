@@ -75,7 +75,7 @@ const BRIDGE4_APPLICATION_DEFINITIONS = Object.freeze({
   'sass-theme': DEFINITIONS['sass-theme'],
   'unit-browser-tests': DEFINITIONS['unit-browser-tests'],
   'accessibility-tests': DEFINITIONS['accessibility-tests'],
-  'e2e-playwright': DEFINITIONS['e2e-playwright'],
+  'e2e-playwright': Object.freeze({ dependencies: [['@axe-core/playwright', '^4.10.0', 'dev'], ['playwright', '1.62.1', 'dev']] }),
   'service-worker': EMPTY_BRIDGE4_APPLICATION_CAPABILITY,
   'local-api-fixtures': EMPTY_BRIDGE4_APPLICATION_CAPABILITY,
   'component-demo': EMPTY_BRIDGE4_APPLICATION_CAPABILITY,

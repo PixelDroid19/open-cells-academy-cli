@@ -29,6 +29,7 @@ import {
 const VITE_STAGE_KIND = Object.freeze({ markerName: '.open-cells-academy-vite-stage.json', kind: 'vite-build-stage', directoryPrefix: '.open-cells-academy-vite-stage-' });
 const ACADEMY_APP_RECIPE = '.open-cells-academy-recipe.json';
 const BRIDGE4_CONFIG_MODULE = 'virtual:open-cells-app-config';
+const BRIDGE4_CONFIG_MODULE_ID = `\0${BRIDGE4_CONFIG_MODULE}`;
 const APP_STAGE_OPTIONS = Object.freeze({
   invalidCode: 'APP_BUILD_SOURCE_INVALID',
   cleanupCode: 'TRANSACTION_CLEANUP_FAILED',
@@ -424,32 +425,44 @@ function isBridge4AppRecipe(contents) {
   }
 }
 
+function isPlainRecord(value) {
+  if (!isRecord(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function serializableSnapshotValue(_key, value) {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'object' && (Array.isArray(value) || isPlainRecord(value))) return value;
+  throw typedError('VITE_OPTIONS_INVALID');
+}
+
+function bridge4ConfigSnapshot(config) {
+  if (!isRecord(config) || !isPlainRecord(config.legacy)) throw typedError('VITE_OPTIONS_INVALID');
+  let serialized;
+  try {
+    serialized = JSON.stringify(config.legacy, serializableSnapshotValue);
+  } catch {
+    throw typedError('VITE_OPTIONS_INVALID');
+  }
+  if (typeof serialized !== 'string') throw typedError('VITE_OPTIONS_INVALID');
+  return `const appConfig = ${serialized};\nexport default appConfig;\n`;
+}
+
 function bridge4ConfigPlugin(source, config) {
   if (source.markerContent === undefined || !isBridge4AppRecipe(source.markerContent)) {
     return undefined;
   }
-  if (!isRecord(config) || typeof config.sourcePath !== 'string') throw typedError('VITE_OPTIONS_INVALID');
-  let sourceSegments;
-  try {
-    sourceSegments = normalizeRelativePath(config.sourcePath);
-  } catch {
-    throw typedError('VITE_OPTIONS_INVALID');
-  }
-  const fileName = sourceSegments.at(-1);
-  if (
-    sourceSegments.length < 3 ||
-    sourceSegments[0] !== 'app' ||
-    sourceSegments[1] !== 'config' ||
-    !/^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:js|mjs)$/.test(fileName) ||
-    sourceSegments.slice(2, -1).some(segment => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment))
-  ) throw typedError('VITE_OPTIONS_INVALID');
-  const selectedConfig = path.join(source.canonicalRoot, ...sourceSegments);
-  if (!isWithin(source.canonicalRoot, selectedConfig)) throw typedError('VITE_OPTIONS_INVALID');
+  const snapshot = bridge4ConfigSnapshot(config);
   return Object.freeze({
     name: 'open-cells-bridge4-selected-config',
     enforce: 'pre',
     resolveId(id) {
-      return id === BRIDGE4_CONFIG_MODULE ? selectedConfig : null;
+      return id === BRIDGE4_CONFIG_MODULE ? BRIDGE4_CONFIG_MODULE_ID : null;
+    },
+    load(id) {
+      return id === BRIDGE4_CONFIG_MODULE_ID ? snapshot : null;
     }
   });
 }

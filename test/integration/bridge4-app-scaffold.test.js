@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { createServer as createNetServer } from 'node:net';
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -45,7 +46,7 @@ async function textFiles(root) {
   return output;
 }
 
-async function materializeBridge4Project(t, name = 'bridge4-cli-lifecycle') {
+async function materializeBridge4Project(t, name = 'bridge4-cli-lifecycle', { e2e = false } = {}) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'open-cells-bridge4-cli-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(path.join(root, 'package.json'), '{"name":"bridge4-cli-owner","private":true}\n');
@@ -54,7 +55,8 @@ async function materializeBridge4Project(t, name = 'bridge4-cli-lifecycle') {
   const publication = await filesystem.applyPlanAtomically(owner, composeRecipe('web-app', {
     kind: 'app',
     name,
-    cellsVersion: '5'
+    cellsVersion: '5',
+    e2e
   }), name);
   return { filesystem, project: publication.destination };
 }
@@ -71,6 +73,18 @@ async function addNestedBridge4Config(project) {
   const nested = path.join(project, 'app', 'config', 'tracks', 'preview.js');
   await mkdir(path.dirname(nested), { recursive: true });
   await writeFile(nested, production.replace('open-cells-production', 'open-cells-preview'));
+}
+
+async function replaceBridge4ConfigWithExternalSymlink(t, project, name, externalSentinel) {
+  const target = path.join(project, 'app', 'config', ...name.split('/'));
+  const source = await readFile(target, 'utf8');
+  const externalRoot = await mkdtemp(path.join(os.tmpdir(), 'open-cells-bridge4-external-config-'));
+  t.after(() => rm(externalRoot, { recursive: true, force: true }));
+  const external = path.join(externalRoot, 'selected-config.js');
+  await writeFile(external, source.replace('open-cells-development', externalSentinel));
+  await rename(target, `${target}.validated`);
+  await symlink(external, target);
+  return Object.freeze({ external, externalRoot, target });
 }
 
 function actualViteToolchain(captured) {
@@ -104,6 +118,114 @@ async function runCells(project, args) {
 async function enableHermeticBridgeBuild(project) {
   const cliRoot = path.resolve(import.meta.dirname, '../..');
   await symlink(path.join(cliRoot, 'node_modules'), path.join(project, 'node_modules'), 'dir');
+}
+
+async function enableHermeticBridgeCli(project) {
+  const cliRoot = path.resolve(import.meta.dirname, '../..');
+  const sourceModules = path.join(cliRoot, 'node_modules');
+  const targetModules = path.join(project, 'node_modules');
+  await mkdir(targetModules);
+  for (const entry of await readdir(sourceModules, { withFileTypes: true })) {
+    if (entry.name === '.bin') continue;
+    await symlink(path.join(sourceModules, entry.name), path.join(targetModules, entry.name), entry.isDirectory() ? 'dir' : 'file');
+  }
+  const sourceBins = path.join(sourceModules, '.bin');
+  const targetBins = path.join(targetModules, '.bin');
+  await mkdir(targetBins);
+  for (const entry of await readdir(sourceBins, { withFileTypes: true })) {
+    if (entry.name === 'cells') continue;
+    await symlink(path.join(sourceBins, entry.name), path.join(targetBins, entry.name), entry.isDirectory() ? 'dir' : 'file');
+  }
+  await symlink(cliRoot, path.join(targetModules, 'open-cells-academy-cli'), 'dir');
+  await symlink(path.join(cliRoot, 'bin', 'cells.js'), path.join(targetBins, 'cells'), 'file');
+}
+
+function localCommandEnvironment(overrides = {}) {
+  const environment = { PATH: process.env.PATH ?? '' };
+  for (const name of ['HOME', 'TMPDIR', 'XDG_CACHE_HOME']) {
+    if (typeof process.env[name] === 'string') environment[name] = process.env[name];
+  }
+  return { ...environment, ...overrides };
+}
+
+async function availablePort() {
+  const server = createNetServer();
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  if (address === null || typeof address === 'string') throw new Error('Expected a TCP port.');
+  await new Promise((resolve, reject) => server.close(error => error === undefined ? resolve() : reject(error)));
+  return address.port;
+}
+
+async function portIsAvailable(port) {
+  const server = createNetServer();
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(port, '127.0.0.1', resolve);
+    });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    if (server.listening) await new Promise((resolve, reject) => server.close(error => error === undefined ? resolve() : reject(error)));
+  }
+}
+
+async function runProjectScript(project, script, args = [], env = {}) {
+  const runner = new NodeProcessRunner({ outputLimitBytes: 200_000 });
+  return runner.run({
+    file: 'npm',
+    args: ['run', script, '--', ...args],
+    cwd: project,
+    env: localCommandEnvironment(env),
+    timeoutMs: 90_000
+  });
+}
+
+function startProjectScript(t, project, script, args = [], env = {}) {
+  const controller = new AbortController();
+  const runner = new NodeProcessRunner({ outputLimitBytes: 200_000, interruptGraceMs: 1_000, terminateGraceMs: 1_000 });
+  let output = '';
+  let settleReady;
+  const ready = new Promise((resolve, reject) => {
+    settleReady = { resolve, reject, settled: false };
+  });
+  const settle = (kind, value) => {
+    if (settleReady.settled) return;
+    settleReady.settled = true;
+    clearTimeout(timeout);
+    settleReady[kind](value);
+  };
+  const completion = runner.run({
+    file: 'npm',
+    args: ['run', script, '--', ...args],
+    cwd: project,
+    env: localCommandEnvironment(env),
+    isServer: true,
+    signal: controller.signal,
+    timeoutMs: 90_000,
+    onOutput(event) {
+      output += event.text;
+      const match = /(?:Server ready|Servidor listo):\s*(http:\/\/127\.0\.0\.1:\d+\/)/.exec(output);
+      if (match !== null) settle('resolve', match[1]);
+    }
+  });
+  const timeout = setTimeout(() => settle('reject', new Error(`Timed out waiting for generated ${script}: ${output}`)), 30_000);
+  void completion.catch(error => settle('reject', error));
+  const close = async () => {
+    if (!controller.signal.aborted) controller.abort();
+    try {
+      await completion;
+    } catch (error) {
+      if (error?.code !== 'INTERRUPTED') throw error;
+    }
+  };
+  t.after(close);
+  return Object.freeze({ ready, close });
 }
 
 async function runGeneratedNativeRuntime(project) {
@@ -188,6 +310,81 @@ test('contract: default application creation normalizes into the Bridge 4 payloa
   assert.equal(metadata.dependencies['@open-cells/page-mixin'], '1.2.4');
   assert.match(bootstrap, /startApp/);
   assert.doesNotMatch(bootstrap, /@cells\/|startBridge/);
+});
+
+test('red: CLI 5 scripts and E2E server use the local Cells configuration workflow while CLI 4 scripts stay unchanged', () => {
+  const modern = fileMap(composeRecipe('web-app', {
+    kind: 'app',
+    name: 'bridge4-local-scripts',
+    cellsVersion: '5',
+    e2e: true
+  }));
+  const legacy = fileMap(composeRecipe('web-app', {
+    kind: 'app',
+    name: 'legacy-vite-scripts',
+    cellsVersion: '4'
+  }));
+  const modernMetadata = JSON.parse(modern.get('package.json'));
+  const legacyMetadata = JSON.parse(legacy.get('package.json'));
+  const playwrightConfig = modern.get('playwright.config.js');
+
+  assert.equal(modernMetadata.scripts.dev, 'cells app:dev -c dev.js');
+  assert.equal(modernMetadata.scripts.build, 'cells app:build -c prod.js');
+  assert.equal(modernMetadata.scripts.preview, 'cells app:preview -c prod.js');
+  assert.match(playwrightConfig, /cells app:dev -c dev\.js/);
+  assert.doesNotMatch(playwrightConfig, /npm run dev/);
+  assert.equal(legacyMetadata.scripts.dev, 'vite');
+  assert.equal(legacyMetadata.scripts.build, 'vite build');
+  assert.equal(legacyMetadata.scripts.preview, 'vite preview');
+});
+
+test('red: generated CLI 5 scripts serve, build, and execute the E2E overlay through the local Cells binary', { timeout: 120_000 }, async t => {
+  const { project } = await materializeBridge4Project(t, 'bridge4-local-cli-scripts', { e2e: true });
+  await enableHermeticBridgeCli(project);
+  const devPort = await availablePort();
+  const dev = startProjectScript(t, project, 'dev', [
+    '--host', '127.0.0.1',
+    '--port', String(devPort),
+    '--strictPort',
+    '--no-open'
+  ]);
+  try {
+    const ready = await dev.ready;
+    const response = await fetch(new URL('app/scripts/app.js', ready));
+    const source = await response.text();
+    assert.equal(response.status, 200, source);
+    assert.match(source, /startApp/);
+  } finally {
+    await dev.close();
+  }
+  assert.equal(await portIsAvailable(devPort), true);
+
+  const build = await runProjectScript(project, 'build');
+  assert.equal(build.exitCode, 0, build.stderr || build.stdout);
+  const previewPort = await availablePort();
+  const preview = startProjectScript(t, project, 'preview', [
+    '--host', '127.0.0.1',
+    '--port', String(previewPort),
+    '--strictPort',
+    '--no-open'
+  ]);
+  try {
+    const ready = await preview.ready;
+    const response = await fetch(ready);
+    const source = await response.text();
+    assert.equal(response.status, 200, source);
+    assert.match(source, /<script type="module"/);
+  } finally {
+    await preview.close();
+  }
+  assert.equal(await portIsAvailable(previewPort), true);
+  const e2ePort = await availablePort();
+  const e2e = await runProjectScript(project, 'e2e', ['--workers=1'], {
+    OPEN_CELLS_E2E_PORT: String(e2ePort)
+  });
+  assert.equal(e2e.exitCode, 0, e2e.stderr || e2e.stdout);
+  assert.match(e2e.stdout, /1 passed/);
+  assert.equal(await portIsAvailable(e2ePort), true);
 });
 
 test('red: generated CLI 5 runtime tests execute public Core and Page Mixin behavior without shims', async t => {
@@ -281,29 +478,26 @@ test('red: actual Vite dev resolves only the validated Bridge 4 config module an
   await addNestedBridge4Config(project);
   const session = await WorkspaceSession.open(project, filesystem);
   const configurations = [
-    Object.freeze({ name: 'dev.js', runtimeConfig: 'open-cells-development', modulePath: '/config/dev.js' }),
-    Object.freeze({ name: 'prod.js', runtimeConfig: 'open-cells-production', modulePath: '/config/prod.js' }),
-    Object.freeze({ name: 'tracks/preview.js', runtimeConfig: 'open-cells-preview', modulePath: '/config/tracks/preview.js' })
+    Object.freeze({ name: 'dev.js', runtimeConfig: 'open-cells-development' }),
+    Object.freeze({ name: 'prod.js', runtimeConfig: 'open-cells-production' }),
+    Object.freeze({ name: 'tracks/preview.js', runtimeConfig: 'open-cells-preview' })
   ];
 
   for (const selected of configurations) {
+    const port = await availablePort();
     const captured = {};
     const handle = await devApp(Object.freeze({
       session,
       toolchain: actualViteToolchain(captured),
       configName: selected.name,
-      options: Object.freeze({ host: '127.0.0.1', port: 0, strictPort: true, open: false })
+      options: Object.freeze({ host: '127.0.0.1', port, strictPort: true, open: false })
     }));
     try {
       const ready = await handle.ready;
       const response = await fetch(new URL('app/scripts/config-probe.js', ready.url));
       const source = await response.text();
       assert.equal(response.status, 200, source);
-      assert.match(source, new RegExp(selected.modulePath.replaceAll('/', '\\/')));
-      assert.doesNotMatch(source, /__OPEN_CELLS_APP_CONFIG__|app\.config\.js/);
-      for (const other of configurations.filter(candidate => candidate !== selected)) {
-        assert.doesNotMatch(source, new RegExp(other.modulePath.replaceAll('/', '\\/')));
-      }
+      assert.doesNotMatch(source, /app\/config\/|__OPEN_CELLS_APP_CONFIG__|app\.config\.js/);
       assert.equal((await captured.server.ssrLoadModule('/app/scripts/config-probe.js')).runtimeConfig, selected.runtimeConfig);
     } finally {
       await handle.close();
@@ -311,16 +505,109 @@ test('red: actual Vite dev resolves only the validated Bridge 4 config module an
   }
 });
 
+test('red: Bridge 4 dev keeps the validated config snapshot when its selected source becomes an external symlink', async t => {
+  const { filesystem, project } = await materializeBridge4Project(t, 'bridge4-vite-config-snapshot-dev');
+  await addBridge4ConfigProbe(project);
+  const session = await WorkspaceSession.open(project, filesystem);
+  const config = await loadCellsConfig(session, 'dev.js');
+  const replacement = await replaceBridge4ConfigWithExternalSymlink(t, project, 'dev.js', 'open-cells-external-dev');
+  const captured = {};
+  const toolchain = actualViteToolchain(captured);
+  const port = await availablePort();
+  let handle;
+  let failure;
+  try {
+    handle = await toolchain.startDev(Object.freeze({
+      session,
+      config,
+      configName: 'dev.js',
+      host: '127.0.0.1',
+      port,
+      strictPort: true,
+      open: false,
+      fsAllow: Object.freeze([project, replacement.externalRoot, path.join(project, 'node_modules')])
+    }));
+    const ready = await handle.ready;
+    const source = await (await fetch(new URL('app/scripts/config-probe.js', ready.url))).text();
+    assert.doesNotMatch(source, /open-cells-external-dev|app\/config\//);
+    assert.equal((await captured.server.ssrLoadModule('/app/scripts/config-probe.js')).runtimeConfig, 'open-cells-development');
+  } catch (cause) {
+    failure = cause;
+  } finally {
+    await handle?.close();
+  }
+  assert.equal(failure, undefined, String(failure));
+});
+
+test('red: Bridge 4 build keeps the validated config snapshot after a source symlink swap without corrupting publication', async t => {
+  const { filesystem, project } = await materializeBridge4Project(t, 'bridge4-vite-config-snapshot-build');
+  await enableHermeticBridgeBuild(project);
+  const session = await WorkspaceSession.open(project, filesystem);
+  const config = await loadCellsConfig(session, 'dev.js');
+  const priorOutput = path.join(project, 'build', 'dev', 'previous-publication.txt');
+  await mkdir(path.dirname(priorOutput), { recursive: true });
+  await writeFile(priorOutput, 'previous publication\n');
+  await replaceBridge4ConfigWithExternalSymlink(t, project, 'dev.js', 'open-cells-external-build');
+  const toolchain = actualViteToolchain({});
+  let failure;
+  try {
+    await toolchain.buildApp(Object.freeze({
+      session,
+      filesystem,
+      configName: 'dev.js',
+      config,
+      options: Object.freeze({})
+    }));
+  } catch (cause) {
+    failure = cause;
+  }
+
+  const output = (await textFiles(path.join(project, 'build', 'dev'))).join('\n');
+  assert.doesNotMatch(output, /open-cells-external-build/);
+  if (failure === undefined) {
+    assert.match(output, /open-cells-development/);
+  } else {
+    assert.equal(await readFile(priorOutput, 'utf8'), 'previous publication\n');
+  }
+});
+
+test('red: Bridge 4 virtual config rejects non-serializable loaded values before Vite starts', async t => {
+  const { filesystem, project } = await materializeBridge4Project(t, 'bridge4-vite-config-serialization');
+  const configPath = path.join(project, 'app', 'config', 'dev.js');
+  const source = await readFile(configPath, 'utf8');
+  await writeFile(configPath, source.replace('const appConfig = {', 'const appConfig = {\n  unsupportedSnapshotValue: 1n,'));
+  const session = await WorkspaceSession.open(project, filesystem);
+  const captured = {};
+  const port = await availablePort();
+  let handle;
+  let failure;
+  try {
+    handle = await devApp(Object.freeze({
+      session,
+      toolchain: actualViteToolchain(captured),
+      configName: 'dev.js',
+      options: Object.freeze({ host: '127.0.0.1', port, strictPort: true, open: false })
+    }));
+  } catch (cause) {
+    failure = cause;
+  } finally {
+    await handle?.close();
+  }
+  assert.equal(failure?.code, 'VITE_DEV_FAILED');
+  assert.equal(captured.server, undefined);
+});
+
 test('red: real Chrome starts the public Open Cells runtime and exercises lifecycle behavior without method replacement', async t => {
   const { filesystem, project } = await materializeBridge4Project(t, 'bridge4-public-browser-runtime');
   await enableHermeticBridgeBuild(project);
   const session = await WorkspaceSession.open(project, filesystem);
   const captured = {};
+  const port = await availablePort();
   const handle = await devApp(Object.freeze({
     session,
     toolchain: actualViteToolchain(captured),
     configName: 'dev.js',
-    options: Object.freeze({ host: '127.0.0.1', port: 0, strictPort: true, open: false })
+    options: Object.freeze({ host: '127.0.0.1', port, strictPort: true, open: false })
   }));
   let browser;
   try {
@@ -458,10 +745,10 @@ test('contract: CLI 5 E2E material is an optional Bridge 4 overlay', () => {
 
   assert.equal(plain.has('playwright.config.js'), false);
   assert.equal(plain.has('e2e/bridge4-app.spec.js'), false);
-  assert.equal(plainMetadata.devDependencies['@playwright/test'], undefined);
+  assert.equal(plainMetadata.devDependencies.playwright, undefined);
   assert.equal(overlay.has('playwright.config.js'), true);
   assert.equal(overlay.has('e2e/bridge4-app.spec.js'), true);
-  assert.equal(overlayMetadata.devDependencies['@playwright/test'], '^1.50.0');
+  assert.equal(overlayMetadata.devDependencies.playwright, '1.62.1');
   assert.match(overlay.get('e2e/bridge4-app.spec.js'), /toHaveURL/);
   assert.match(overlay.get('e2e/bridge4-app.spec.js'), /introduction/);
 });

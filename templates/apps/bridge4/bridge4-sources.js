@@ -601,24 +601,32 @@ export default defineConfig({
 }
 
 function playwrightConfigSource() {
-  return `import { defineConfig } from '@playwright/test';
+  return `import { defineConfig } from 'playwright/test';
+
+const port = Number(process.env.OPEN_CELLS_E2E_PORT ?? '4173');
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  throw new TypeError('OPEN_CELLS_E2E_PORT must be a TCP port');
+}
+const address = 'http://127.0.0.1:' + String(port);
 
 export default defineConfig({
   testDir: './e2e',
   use: {
-    baseURL: 'http://127.0.0.1:4173'
+    baseURL: address,
+    browserName: 'chromium',
+    channel: process.env.OPEN_CELLS_PLAYWRIGHT_CHANNEL ?? 'chrome'
   },
   webServer: {
-    command: 'npm run dev -- --host 127.0.0.1 --port 4173 --strictPort',
+    command: 'cells app:dev -c dev.js --host 127.0.0.1 --port ' + String(port) + ' --strictPort --no-open',
     reuseExistingServer: false,
-    url: 'http://127.0.0.1:4173'
+    url: address
   }
 });
 `;
 }
 
 function e2eSpecSource() {
-  return `import { expect, test } from '@playwright/test';
+  return `import { expect, test } from 'playwright/test';
 
 test('opens a lesson through the generated named route', async ({ page }) => {
   await page.goto('/');

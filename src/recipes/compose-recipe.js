@@ -67,11 +67,11 @@ function packageMetadata(options, dependencies) {
     const bridge4 = options.cellsVersion === '5';
     metadata.scripts = {
       'academy:version': 'cells --version',
-      build: 'vite build',
-      dev: 'vite',
+      build: bridge4 ? 'cells app:build -c prod.js' : 'vite build',
+      dev: bridge4 ? 'cells app:dev -c dev.js' : 'vite',
       lint: 'node scripts/validate-source.js',
       locales: 'node scripts/validate-locales.js',
-      preview: 'vite preview',
+      preview: bridge4 ? 'cells app:preview -c prod.js' : 'vite preview',
       test: 'vitest run',
       'test:a11y': bridge4 ? 'vitest run test/unit' : 'vitest run test/app-accessibility.test.js'
     };
