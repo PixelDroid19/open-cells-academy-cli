@@ -984,7 +984,7 @@ test('red: Bridge 4 virtual config rejects non-serializable effective app values
   } finally {
     await handle?.close();
   }
-  assert.equal(failure?.code, 'VITE_DEV_FAILED');
+  assert.equal(failure?.code, 'CONFIG_INVALID');
   assert.equal(captured.server, undefined);
 });
 

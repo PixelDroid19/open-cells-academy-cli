@@ -260,6 +260,128 @@ test('red: config rejects app accessors without evaluating them', async t => {
   await assert.rejects(readFile(marker, 'utf8'), error => error?.code === 'ENOENT');
 });
 
+test('red: ESM config rejects app accessors inside the worker without evaluating them', async t => {
+  const { root, session } = await fixture(t);
+  const marker = path.join(root, 'app', 'config', 'esm-accessor-read.txt');
+  await writeConfig(
+    root,
+    'esm-accessor.js',
+    `import { writeFileSync } from 'node:fs';
+const marker = new URL('./esm-accessor-read.txt', import.meta.url);
+const app = {};
+Object.defineProperty(app, 'runtimeConfig', {
+  enumerable: true,
+  get() {
+    writeFileSync(marker, 'read');
+    return 'unexpected';
+  }
+});
+export default { app };
+`
+  );
+
+  await assertConfigCode(loadCellsConfig(session, 'esm-accessor.js'), 'app/config/esm-accessor.js');
+  await assert.rejects(readFile(marker, 'utf8'), error => error?.code === 'ENOENT');
+});
+
+test('red: ESM config rejects custom prototypes before structured cloning erases them', async t => {
+  const { root, session } = await fixture(t);
+  await writeConfig(
+    root,
+    'esm-custom-prototype.js',
+    `class AppConfig {
+  constructor() {
+    this.runtimeConfig = 'custom-prototype';
+  }
+}
+export default { app: new AppConfig() };
+`
+  );
+
+  await assertConfigCode(
+    loadCellsConfig(session, 'esm-custom-prototype.js'),
+    'app/config/esm-custom-prototype.js'
+  );
+});
+
+test('red: ESM config cannot replace descriptor intrinsics to force an accessor across the worker boundary', async t => {
+  const { root, session } = await fixture(t);
+  const marker = path.join(root, 'app', 'config', 'esm-intrinsic-accessor-read.txt');
+  await writeConfig(
+    root,
+    'esm-intrinsic-accessor.js',
+    `import { writeFileSync } from 'node:fs';
+const originalDescriptor = Object.getOwnPropertyDescriptor;
+Object.getOwnPropertyDescriptor = (value, key) => {
+  const descriptor = originalDescriptor(value, key);
+  if (descriptor && typeof descriptor.get === 'function') {
+    return { value: value[key], enumerable: true, configurable: true, writable: true };
+  }
+  return descriptor;
+};
+const marker = new URL('./esm-intrinsic-accessor-read.txt', import.meta.url);
+const app = {};
+Object.defineProperty(app, 'runtimeConfig', {
+  enumerable: true,
+  get() {
+    writeFileSync(marker, 'read');
+    return 'unexpected';
+  }
+});
+export default { app };
+`
+  );
+
+  await assertConfigCode(
+    loadCellsConfig(session, 'esm-intrinsic-accessor.js'),
+    'app/config/esm-intrinsic-accessor.js'
+  );
+  await assert.rejects(readFile(marker, 'utf8'), error => error?.code === 'ENOENT');
+});
+
+test('red: ESM config cannot replace prototype intrinsics to disguise a custom class', async t => {
+  const { root, session } = await fixture(t);
+  await writeConfig(
+    root,
+    'esm-intrinsic-prototype.js',
+    `Object.getPrototypeOf = () => Object.prototype;
+class AppConfig {
+  constructor() {
+    this.runtimeConfig = 'class-erased';
+  }
+}
+export default { app: new AppConfig() };
+`
+  );
+
+  await assertConfigCode(
+    loadCellsConfig(session, 'esm-intrinsic-prototype.js'),
+    'app/config/esm-intrinsic-prototype.js'
+  );
+});
+
+test('red: ESM config cannot replace Array methods used by worker data copying', async t => {
+  const { root, session } = await fixture(t);
+  const marker = path.join(root, 'app', 'config', 'esm-array-push.txt');
+  await writeConfig(
+    root,
+    'esm-array-method.js',
+    `import { writeFileSync } from 'node:fs';
+const marker = new URL('./esm-array-push.txt', import.meta.url);
+Array.prototype.push = function (value) {
+  writeFileSync(marker, String(value));
+  return this.length;
+};
+export default { app: { values: ['crossed'] } };
+`
+  );
+
+  const config = await loadCellsConfig(session, 'esm-array-method.js');
+
+  assert.deepEqual(config.app, { values: ['crossed'] });
+  await assert.rejects(readFile(marker, 'utf8'), error => error?.code === 'ENOENT');
+});
+
 test('break: config preserves the highest-priority build object as an independent deep-frozen value', async t => {
   const { root, session } = await fixture(t);
   await writeConfig(

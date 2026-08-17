@@ -6,7 +6,7 @@
 
 **Architecture:** Creation selects an explicit immutable scaffold generation (`"4"` or `"5"`) and composes a version-specific payload behind the existing atomic publication boundary. CLI 5 payloads use Bridge 4, static Lit pages, Vite, and Vitest; CLI 4 payloads retain Bridge 3 trees, `dist` generation, and legacy command vocabulary. Shared Academy teaching UI remains neutral and is labeled as an adapter rather than native framework API.
 
-**Tech Stack:** Node.js >=22.12, JavaScript ESM, Lit 3, `@cells/cells-bridge`, `@cells/cells-page-mixin`, Vite 7, Vitest 3, Web Test Runner compatibility, Sass, Playwright E2E, native `node:test` for CLI repository contracts.
+**Tech Stack:** Node.js >=22.12, JavaScript ESM, Lit 3, public `@open-cells/core` and `@open-cells/page-mixin`, Vite 7, Vitest 3, Web Test Runner compatibility, Sass, Playwright E2E, native `node:test` for CLI repository contracts.
 
 ## Global Constraints
 
@@ -14,7 +14,7 @@
 - Generated code, tests, docs, package metadata, and commits use only neutral Open Cells and Academy terminology.
 - Generated dependency specs use only the public npm registry or an owned local CLI tarball.
 - `cellsVersion` accepts exactly `"4"` or `"5"`; omission means `"5"`.
-- CLI 5 apps declare `@cells/cells-bridge:^4.0.0`, `@cells/cells-page-mixin:^2.0.0`, and Lit 3.
+- CLI 5-compatible Academy apps declare the public Open Cells packages `@open-cells/core:1.2.1`, `@open-cells/page-mixin:1.2.4`, and Lit 3. They never impersonate the unavailable private-name packages.
 - CLI 4 and CLI 5 scaffold payloads remain separate; never combine Bridge 3 and Bridge 4 imports in one generated app.
 - Existing destinations are rejected and project publication remains atomic, workspace-contained, and symlink-safe.
 - CLI repository tests use sequential native `node --test`; generated-project acceptance uses only `cells app:*`, `cells component:*`, or `cells lit-component:*` commands.
@@ -147,7 +147,7 @@ for (const required of [
 ]) assert.equal(files.has(required), true, required);
 ```
 
-Assert `package.json` declares Bridge major 4/Page Mixin major 2 and does not expose the Academy Core facade as native Bridge API.
+Assert `package.json` declares the public Open Cells Core/Page Mixin packages and does not expose the former Academy facade as native Bridge API.
 
 - [ ] **Step 2: Run structural RED**
 
@@ -161,7 +161,7 @@ Expected: required real Cells app files and dependencies are absent.
 
 Keep string/template material in `templates/apps/bridge4/bridge4-sources.js`; keep validation, profile branching, and `ScaffoldPlan` composition in `bridge4-app-payload.js`. Dispatch from the existing app payload only when `cellsVersion === "5"`.
 
-Generate `startBridge`, immutable routes with async `action`, `CellsPageMixin(LitElement)` pages, named navigation with params, first-level template elements, and page lifecycle hooks.
+Generate `startApp`, immutable routes with async `action`, `PageMixin(LitElement)` pages, named navigation with params, first-level template elements, and page lifecycle hooks.
 
 - [ ] **Step 4: Implement app-owned channels and data manager**
 

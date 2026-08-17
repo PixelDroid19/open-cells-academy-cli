@@ -423,9 +423,143 @@ async function esmDependencyGraph(session, file, sourcePath) {
 async function evaluateEsmConfig(file, sourcePath) {
   const workerSource = `
     const { parentPort, workerData } = require('node:worker_threads');
+
+    const safePostMessage = parentPort.postMessage.bind(parentPort);
+    const SafeTypeError = TypeError;
+    const SafeWeakMap = WeakMap;
+    const SafeWeakSet = WeakSet;
+    const SafeSet = Set;
+    const objectPrototype = Object.prototype;
+    const arrayPrototype = Array.prototype;
+    const safeArrayIsArray = Array.isArray;
+    const safeObjectCreate = Object.create;
+    const safeObjectDefineProperty = Object.defineProperty;
+    const safeObjectGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+    const safeObjectGetPrototypeOf = Object.getPrototypeOf;
+    const safeObjectHasOwn = Object.hasOwn;
+    const safeOwnKeys = Reflect.ownKeys;
+    const safeApply = Reflect.apply;
+    const safeNumber = Number;
+    const safeNumberIsFinite = Number.isFinite;
+    const safeNumberIsSafeInteger = Number.isSafeInteger;
+    const safeString = String;
+    const weakMapGet = WeakMap.prototype.get;
+    const weakMapHas = WeakMap.prototype.has;
+    const weakMapSet = WeakMap.prototype.set;
+    const weakSetAdd = WeakSet.prototype.add;
+    const weakSetDelete = WeakSet.prototype.delete;
+    const weakSetHas = WeakSet.prototype.has;
+    const setAdd = Set.prototype.add;
+    const setHas = Set.prototype.has;
+
+    const mapGet = (map, key) => safeApply(weakMapGet, map, [key]);
+    const mapHas = (map, key) => safeApply(weakMapHas, map, [key]);
+    const mapSet = (map, key, value) => safeApply(weakMapSet, map, [key, value]);
+    const activeAdd = (set, key) => safeApply(weakSetAdd, set, [key]);
+    const activeDelete = (set, key) => safeApply(weakSetDelete, set, [key]);
+    const activeHas = (set, key) => safeApply(weakSetHas, set, [key]);
+    const indexAdd = (set, key) => safeApply(setAdd, set, [key]);
+    const indexHas = (set, key) => safeApply(setHas, set, [key]);
+
+    function isPlainRecord(value) {
+      if (value === null || typeof value !== 'object' || safeArrayIsArray(value)) return false;
+      const prototype = safeObjectGetPrototypeOf(value);
+      return prototype === objectPrototype || prototype === null;
+    }
+
+    function dataDescriptor(value, key, enumerable = true) {
+      const descriptor = safeObjectGetOwnPropertyDescriptor(value, key);
+      if (
+        descriptor === undefined ||
+        !safeObjectHasOwn(descriptor, 'value') ||
+        (enumerable && descriptor.enumerable !== true)
+      ) {
+        throw new SafeTypeError('Config values must contain enumerable data properties only');
+      }
+      return descriptor.value;
+    }
+
+    function cloneData(value, seen = new SafeWeakMap(), active = new SafeWeakSet()) {
+      if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+      if (typeof value === 'number') {
+        if (!safeNumberIsFinite(value)) throw new SafeTypeError('Config numbers must be finite');
+        return value;
+      }
+      if (typeof value !== 'object') throw new SafeTypeError('Config values must be data only');
+      if (mapHas(seen, value)) {
+        if (activeHas(active, value)) throw new SafeTypeError('Config values must not be cyclic');
+        return mapGet(seen, value);
+      }
+      if (safeArrayIsArray(value)) {
+        if (safeObjectGetPrototypeOf(value) !== arrayPrototype) {
+          throw new SafeTypeError('Config arrays must use the standard prototype');
+        }
+        const keys = safeOwnKeys(value);
+        const length = dataDescriptor(value, 'length', false);
+        if (!safeNumberIsSafeInteger(length) || length < 0 || keys.length !== length + 1) {
+          throw new SafeTypeError('Config arrays must be dense data arrays');
+        }
+        const copy = [];
+        const indices = new SafeSet();
+        mapSet(seen, value, copy);
+        activeAdd(active, value);
+        try {
+          for (let position = 0; position < keys.length; position += 1) {
+            const key = keys[position];
+            if (key === 'length') continue;
+            if (typeof key !== 'string') throw new SafeTypeError('Config arrays must contain ordinary indices only');
+            const numeric = safeNumber(key);
+            if (!safeNumberIsSafeInteger(numeric) || numeric < 0 || numeric >= length || safeString(numeric) !== key) {
+              throw new SafeTypeError('Config arrays must contain ordinary indices only');
+            }
+            indexAdd(indices, key);
+          }
+          for (let index = 0; index < length; index += 1) {
+            const key = safeString(index);
+            if (!indexHas(indices, key)) throw new SafeTypeError('Config arrays must not be sparse');
+            safeObjectDefineProperty(copy, key, {
+              value: cloneData(dataDescriptor(value, key), seen, active),
+              enumerable: true,
+              configurable: true,
+              writable: true
+            });
+          }
+        } finally {
+          activeDelete(active, value);
+        }
+        return copy;
+      }
+      if (!isPlainRecord(value)) throw new SafeTypeError('Config values must be plain records');
+      const copy = safeObjectCreate(null);
+      mapSet(seen, value, copy);
+      activeAdd(active, value);
+      try {
+        const keys = safeOwnKeys(value);
+        for (let position = 0; position < keys.length; position += 1) {
+          const key = keys[position];
+          if (typeof key !== 'string') throw new SafeTypeError('Config values must not contain symbol keys');
+          safeObjectDefineProperty(copy, key, {
+            value: cloneData(dataDescriptor(value, key), seen, active),
+            enumerable: true,
+            configurable: true,
+            writable: true
+          });
+        }
+      } finally {
+        activeDelete(active, value);
+      }
+      return copy;
+    }
+
     import(workerData.url).then(
-      module => parentPort.postMessage({ ok: true, value: module.default }),
-      () => parentPort.postMessage({ ok: false })
+      module => {
+        try {
+          safePostMessage({ ok: true, value: cloneData(module.default) });
+        } catch {
+          safePostMessage({ ok: false });
+        }
+      },
+      () => safePostMessage({ ok: false })
     );
   `;
   return new Promise((resolve, reject) => {

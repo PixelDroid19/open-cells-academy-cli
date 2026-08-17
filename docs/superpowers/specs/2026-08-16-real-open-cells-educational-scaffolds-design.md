@@ -75,13 +75,16 @@ test/
   e2e/                 # only when requested
 ```
 
-The manifest uses compatible public releases of `@cells/cells-bridge` major
-4 and `@cells/cells-page-mixin` major 2. `app/scripts/app.js` calls
-`startBridge({ routes, mainNode, ...cells_properties, appConfig })`.
+The public Academy manifest uses `@open-cells/core` and
+`@open-cells/page-mixin`, the installable Open Cells runtime packages published
+to the public npm registry. The private-name CLI 5 packages are not available
+from that registry and must not be impersonated or fetched from a private
+source. `app/scripts/app.js` calls
+`startApp({ routes, mainNode, ...cells_properties, appConfig })`.
 
 Routes are immutable records with `path`, `name`, `component`, and an async
 `action` that imports the declared page. Pages extend
-`CellsPageMixin(LitElement)`, end in `-page`, and render an Open Cells template
+`PageMixin(LitElement)`, end in `-page`, and render an Open Cells template
 as their first-level element. Navigation uses route names and object params.
 
 The teaching flow contains a catalog page at `/`, a lesson page at
