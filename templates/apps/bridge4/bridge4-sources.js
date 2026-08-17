@@ -160,24 +160,9 @@ export const routes = ROUTES;
 `;
 }
 
-function appConfigSource() {
-  return `import devConfig from './dev.js';
-import prodConfig from './prod.js';
-
-const configName = typeof __OPEN_CELLS_APP_CONFIG__ === 'string'
-  ? __OPEN_CELLS_APP_CONFIG__
-  : 'dev.js';
-if (configName !== 'dev.js' && configName !== 'prod.js') {
-  throw new TypeError('Unsupported Cells application config');
-}
-
-export default configName === 'prod.js' ? prodConfig : devConfig;
-`;
-}
-
 function appSource() {
   return `import { startBridge } from '@cells/cells-bridge';
-import appConfig from '../config/app.config.js';
+import appConfig from 'virtual:open-cells-app-config';
 import { ROUTES } from './app-routes.js';
 import { setLanguage } from './localization.js';
 import './lit-initial-components.js';
@@ -709,7 +694,7 @@ describe('Bridge 4 progress channel', () => {
     expect(catalogSource).toContain("this.navigate('lesson', { lessonId })");
   });
 
-  it('uses the native latest progress subscription on enter and removes it on leave', () => {
+  it('declares the retained progress lifecycle subscription on enter and removes it on leave', () => {
     expect(lessonSource).toContain('CellsPageMixin(LitElement)');
     expect(lessonSource).toMatch(/onPageEnter\\(\\)[\\s\\S]*this\\.subscribe\\(ACADEMY_PROGRESS_CHANNEL, this\\.receiveProgress\\)/);
     expect(lessonSource).toMatch(/onPageLeave\\(\\)[\\s\\S]*this\\.unsubscribe\\(ACADEMY_PROGRESS_CHANNEL\\)/);
@@ -815,7 +800,6 @@ export function createBridge4Sources(profile, name, { e2e = false } = {}) {
     'vite.config.js': viteConfigSource(),
     'scripts/validate-locales.js': localeValidationSource(),
     'scripts/validate-source.js': sourceValidationSource(),
-    'app/config/app.config.js': appConfigSource(),
     'app/config/dev.js': configSource(profile, name, false),
     'app/config/prod.js': configSource(profile, name, true),
     'app/data-managers/lesson-data-manager.js': lessonDataManagerSource(),

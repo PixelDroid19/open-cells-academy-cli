@@ -28,6 +28,7 @@ import {
 
 const VITE_STAGE_KIND = Object.freeze({ markerName: '.open-cells-academy-vite-stage.json', kind: 'vite-build-stage', directoryPrefix: '.open-cells-academy-vite-stage-' });
 const ACADEMY_APP_RECIPE = '.open-cells-academy-recipe.json';
+const BRIDGE4_CONFIG_MODULE = 'virtual:open-cells-app-config';
 const APP_STAGE_OPTIONS = Object.freeze({
   invalidCode: 'APP_BUILD_SOURCE_INVALID',
   cleanupCode: 'TRANSACTION_CLEANUP_FAILED',
@@ -423,12 +424,34 @@ function isBridge4AppRecipe(contents) {
   }
 }
 
-function bridge4ConfigDefine(source, configName) {
+function bridge4ConfigPlugin(source, config) {
   if (source.markerContent === undefined || !isBridge4AppRecipe(source.markerContent)) {
     return undefined;
   }
-  if (typeof configName !== 'string') throw typedError('VITE_OPTIONS_INVALID');
-  return Object.freeze({ __OPEN_CELLS_APP_CONFIG__: JSON.stringify(configName) });
+  if (!isRecord(config) || typeof config.sourcePath !== 'string') throw typedError('VITE_OPTIONS_INVALID');
+  let sourceSegments;
+  try {
+    sourceSegments = normalizeRelativePath(config.sourcePath);
+  } catch {
+    throw typedError('VITE_OPTIONS_INVALID');
+  }
+  const fileName = sourceSegments.at(-1);
+  if (
+    sourceSegments.length < 3 ||
+    sourceSegments[0] !== 'app' ||
+    sourceSegments[1] !== 'config' ||
+    !/^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:js|mjs)$/.test(fileName) ||
+    sourceSegments.slice(2, -1).some(segment => !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(segment))
+  ) throw typedError('VITE_OPTIONS_INVALID');
+  const selectedConfig = path.join(source.canonicalRoot, ...sourceSegments);
+  if (!isWithin(source.canonicalRoot, selectedConfig)) throw typedError('VITE_OPTIONS_INVALID');
+  return Object.freeze({
+    name: 'open-cells-bridge4-selected-config',
+    enforce: 'pre',
+    resolveId(id) {
+      return id === BRIDGE4_CONFIG_MODULE ? selectedConfig : null;
+    }
+  });
 }
 
 async function captureTemplateSource(session, appRoot, markerPath = undefined) {
@@ -778,11 +801,10 @@ export class AppToolchain {
       const legacyPlugins = appSource.markerPath === undefined && options.config !== undefined
         ? await createLegacyAppPlugins(Object.freeze({ session: options.session, configName: options.configName, config: options.config }))
         : Object.freeze([]);
-      const configDefine = bridge4ConfigDefine(appSource, options.configName);
+      const configPlugin = bridge4ConfigPlugin(appSource, options.config);
       const preparedOptions = {
         ...options,
-        ...(configDefine === undefined ? {} : { define: { ...(options.define ?? {}), ...configDefine } }),
-        plugins: [...legacyPlugins, ...(options.plugins ?? [])]
+        plugins: [...(configPlugin === undefined ? [] : [configPlugin]), ...legacyPlugins, ...(options.plugins ?? [])]
       };
       server = await this.#api.createServer(devConfig(options.session, preparedOptions, appSource.appRoot));
       if (!isRecord(server) || typeof server.listen !== 'function') throw typedError('VITE_SERVER_INVALID');
@@ -829,6 +851,7 @@ export class AppToolchain {
       const legacyPlugins = appSource.markerPath === undefined
         ? await createLegacyAppPlugins(Object.freeze({ session: request.session, configName: request.configName, config: request.config }))
         : Object.freeze([]);
+      const configPlugin = bridge4ConfigPlugin(appSource, request.config);
       const academyHtml = appSource.markerPath === undefined && template.includes('##app.lang##')
         ? generateAppHtml({ template, values: appValues(request.config) })
         : undefined;
@@ -839,8 +862,11 @@ export class AppToolchain {
         build: request.config.build,
         sourceMap: request.options?.sourceMap,
         sassLogLevel: request.options?.sassLogLevel,
-        define: bridge4ConfigDefine(appSource, request.configName),
-        plugins: Object.freeze([...legacyPlugins, ...(academyHtml === undefined ? [] : [htmlPlugin(academyHtml)])])
+        plugins: Object.freeze([
+          ...(configPlugin === undefined ? [] : [configPlugin]),
+          ...legacyPlugins,
+          ...(academyHtml === undefined ? [] : [htmlPlugin(academyHtml)])
+        ])
       }));
       await verifyAppTemplate(appSource);
       await verifyOwnedStage(ownedStage);

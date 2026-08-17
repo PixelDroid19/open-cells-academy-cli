@@ -3,13 +3,16 @@ import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import * as vite from 'vite';
 
 import { FileWorkspaceLock } from '../../src/adapters/node/file-workspace-lock.js';
 import { NodeFilesystem } from '../../src/adapters/node/node-filesystem.js';
 import { NodeProcessRunner } from '../../src/adapters/node/process-runner.js';
 import { discoverAppLocaleSources } from '../../src/adapters/vite/locale-discovery.js';
 import { loadCellsConfig } from '../../src/adapters/vite/config-loader.js';
+import { AppToolchain } from '../../src/adapters/vite/app-toolchain.js';
 import { createApp } from '../../src/application/app/create-app.js';
+import { devApp } from '../../src/application/app/dev-app.js';
 import { generateAppLocales } from '../../src/application/app/generate-locales.js';
 import { WorkspaceSession } from '../../src/domain/workspace-session.js';
 import { composeRecipe } from '../../src/recipes/compose-recipe.js';
@@ -55,6 +58,36 @@ async function materializeBridge4Project(t, name = 'bridge4-cli-lifecycle') {
   return { filesystem, project: publication.destination };
 }
 
+async function addBridge4ConfigProbe(project) {
+  await writeFile(path.join(project, 'app', 'scripts', 'config-probe.js'), `import appConfig from 'virtual:open-cells-app-config';
+
+export const runtimeConfig = appConfig.app_properties.app.runtimeConfig;
+`);
+}
+
+async function addNestedBridge4Config(project) {
+  const production = await readFile(path.join(project, 'app', 'config', 'prod.js'), 'utf8');
+  const nested = path.join(project, 'app', 'config', 'tracks', 'preview.js');
+  await mkdir(path.dirname(nested), { recursive: true });
+  await writeFile(nested, production.replace('open-cells-production', 'open-cells-preview'));
+}
+
+function actualViteToolchain(captured) {
+  return new AppToolchain(Object.freeze({
+    async createServer(config) {
+      const server = await vite.createServer({
+        ...config,
+        configFile: false,
+        optimizeDeps: { noDiscovery: true }
+      });
+      captured.server = server;
+      return server;
+    },
+    build: (...args) => vite.build(...args),
+    preview: (...args) => vite.preview(...args)
+  }));
+}
+
 async function runCells(project, args) {
   const cliRoot = path.resolve(import.meta.dirname, '../..');
   const runner = new NodeProcessRunner({ outputLimitBytes: 200_000 });
@@ -88,7 +121,6 @@ export default defineConfig({
 
 test('contract: every CLI 5 app profile emits the complete Bridge 4 learning tree', () => {
   const requiredFiles = [
-    'app/config/app.config.js',
     'app/config/dev.js',
     'app/config/prod.js',
     'app/tpls/index.tpl',
@@ -175,15 +207,15 @@ test('red: Bridge 4 configs use supported locale discovery and a CLI-selected ap
   const devSource = files.get('app/config/dev.js');
   const prodSource = files.get('app/config/prod.js');
   const bootstrap = files.get('app/scripts/app.js');
-  const selectedConfig = files.get('app/config/app.config.js');
 
   assert.doesNotMatch(devSource, /source:\s*'app\/locales-app\/locales\.json'/);
   assert.match(devSource, /enabledI18n/);
   assert.match(devSource, /languages/);
   assert.match(devSource, /forTesting/);
   assert.doesNotMatch(prodSource, /source:\s*'app\/locales-app\/locales\.json'/);
-  assert.match(bootstrap, /\.\.\/config\/app\.config\.js/);
-  assert.match(selectedConfig, /__OPEN_CELLS_APP_CONFIG__/);
+  assert.match(bootstrap, /virtual:open-cells-app-config/);
+  assert.doesNotMatch(bootstrap, /app\.config\.js|dev\.js|prod\.js/);
+  assert.equal(files.has('app/config/app.config.js'), false);
 
   const { filesystem, project } = await materializeBridge4Project(t, 'bridge4-locales-contract');
   const session = await WorkspaceSession.open(project, filesystem);
@@ -206,6 +238,7 @@ test('red: Bridge 4 configs use supported locale discovery and a CLI-selected ap
 
 test('red: Bridge 4 CLI locales and builds honor dev and production configuration independently', async t => {
   const { project } = await materializeBridge4Project(t, 'bridge4-cli-config');
+  await addNestedBridge4Config(project);
   const locales = await runCells(project, ['app:locales', '-c', 'dev.js']);
   assert.equal(locales.exitCode, 0, locales.stderr);
   assert.equal((await readFile(path.join(project, 'dist', 'locales', 'en.json'), 'utf8')).includes('Learning catalog'), true);
@@ -215,12 +248,53 @@ test('red: Bridge 4 CLI locales and builds honor dev and production configuratio
   assert.equal(dev.exitCode, 0, dev.stderr);
   const prod = await runCells(project, ['app:build', '-c', 'prod.js']);
   assert.equal(prod.exitCode, 0, prod.stderr);
+  const preview = await runCells(project, ['app:build', '-c', 'tracks/preview.js']);
+  assert.equal(preview.exitCode, 0, preview.stderr);
   const devOutput = (await textFiles(path.join(project, 'build', 'dev'))).join('\n');
   const prodOutput = (await textFiles(path.join(project, 'build', 'prod'))).join('\n');
+  const previewOutput = (await textFiles(path.join(project, 'build', 'tracks', 'preview'))).join('\n');
   assert.match(devOutput, /open-cells-development/);
   assert.doesNotMatch(devOutput, /open-cells-production/);
   assert.match(prodOutput, /open-cells-production/);
   assert.doesNotMatch(prodOutput, /open-cells-development/);
+  assert.match(previewOutput, /open-cells-preview/);
+  assert.doesNotMatch(previewOutput, /open-cells-development|open-cells-production/);
+});
+
+test('red: actual Vite dev resolves only the validated Bridge 4 config module and evaluates it at runtime', async t => {
+  const { filesystem, project } = await materializeBridge4Project(t, 'bridge4-vite-config');
+  await addBridge4ConfigProbe(project);
+  await addNestedBridge4Config(project);
+  const session = await WorkspaceSession.open(project, filesystem);
+  const configurations = [
+    Object.freeze({ name: 'dev.js', runtimeConfig: 'open-cells-development', modulePath: '/config/dev.js' }),
+    Object.freeze({ name: 'prod.js', runtimeConfig: 'open-cells-production', modulePath: '/config/prod.js' }),
+    Object.freeze({ name: 'tracks/preview.js', runtimeConfig: 'open-cells-preview', modulePath: '/config/tracks/preview.js' })
+  ];
+
+  for (const selected of configurations) {
+    const captured = {};
+    const handle = await devApp(Object.freeze({
+      session,
+      toolchain: actualViteToolchain(captured),
+      configName: selected.name,
+      options: Object.freeze({ host: '127.0.0.1', port: 0, strictPort: true, open: false })
+    }));
+    try {
+      const ready = await handle.ready;
+      const response = await fetch(new URL('app/scripts/config-probe.js', ready.url));
+      const source = await response.text();
+      assert.equal(response.status, 200, source);
+      assert.match(source, new RegExp(selected.modulePath.replaceAll('/', '\\/')));
+      assert.doesNotMatch(source, /__OPEN_CELLS_APP_CONFIG__|app\.config\.js/);
+      for (const other of configurations.filter(candidate => candidate !== selected)) {
+        assert.doesNotMatch(source, new RegExp(other.modulePath.replaceAll('/', '\\/')));
+      }
+      assert.equal((await captured.server.ssrLoadModule('/app/scripts/config-probe.js')).runtimeConfig, selected.runtimeConfig);
+    } finally {
+      await handle.close();
+    }
+  }
 });
 
 test('red: Bridge 4 pages render a Cells template contract instead of a plain Lit wrapper', () => {
@@ -254,7 +328,8 @@ test('red: Bridge 4 generated tests use the public page contract and drive the E
   assert.match(channels, /CellsPageMixin\(LitElement\)/);
   assert.match(channels, /onPageEnter/);
   assert.match(channels, /onPageLeave/);
-  assert.match(channels, /latest progress/);
+  assert.match(channels, /retained progress lifecycle/);
+  assert.doesNotMatch(channels, /native latest progress/);
   assert.doesNotMatch(channels, /page\.(publish|navigate|subscribe|unsubscribe)\s*=/);
   assert.match(locales, /button\[data-language="es"\]/);
   assert.match(locales, /\.click\(\)/);
@@ -288,7 +363,7 @@ test('contract: CLI 5 E2E material is an optional Bridge 4 overlay', () => {
   assert.match(overlay.get('e2e/bridge4-app.spec.js'), /introduction/);
 });
 
-test('contract: CLI 5 app routes and pages use native Bridge 4 navigation lifecycle boundaries', () => {
+test('contract: CLI 5 app routes and pages declare Bridge 4 navigation lifecycle boundaries', () => {
   const files = bridge4Files('web-app');
   const bootstrap = files.get('app/scripts/app.js');
   const channels = files.get('app/scripts/channels.js');
@@ -323,7 +398,7 @@ test('contract: CLI 5 generated tests cover retained progress, fixture states, a
   const locales = files.get('test/unit/locales.test.js');
   const catalogs = JSON.parse(files.get('app/locales-app/locales.json'));
 
-  assert.match(channels, /latest/);
+  assert.match(channels, /retained/);
   assert.match(channels, /onPageEnter/);
   assert.match(channels, /onPageLeave/);
   assert.match(dataManager, /loading/);
@@ -374,7 +449,7 @@ test('contract: CLI 5 generated source and locale validators run against the Bri
   }
 });
 
-test('contract: CLI 5 generated unit tests run without a native page-mixin shim', async t => {
+test('contract: CLI 5 generated declarative unit tests avoid a Page Mixin shim', async t => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'open-cells-bridge4-unit-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(path.join(root, 'package.json'), '{"name":"bridge4-unit-owner","private":true}\n');
