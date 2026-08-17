@@ -61,8 +61,8 @@ const BRIDGE4_APPLICATION_DEFINITIONS = Object.freeze({
   'lit-runtime': DEFINITIONS['lit-runtime'],
   'cells-config': Object.freeze({
     dependencies: [
-      ['@cells/cells-bridge', '^4.0.0', 'runtime'],
-      ['@cells/cells-page-mixin', '^2.0.0', 'runtime'],
+      ['@open-cells/core', '1.2.1', 'runtime'],
+      ['@open-cells/page-mixin', '1.2.4', 'runtime'],
       ['vite', '7.3.6', 'dev']
     ]
   }),

@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { chromium } from 'playwright';
 import * as vite from 'vite';
 
 import { FileWorkspaceLock } from '../../src/adapters/node/file-workspace-lock.js';
@@ -103,20 +104,18 @@ async function runCells(project, args) {
 async function enableHermeticBridgeBuild(project) {
   const cliRoot = path.resolve(import.meta.dirname, '../..');
   await symlink(path.join(cliRoot, 'node_modules'), path.join(project, 'node_modules'), 'dir');
-  await writeFile(path.join(project, 'vite.config.js'), `import { defineConfig } from 'vitest/config';
+}
 
-export default defineConfig({
-  build: {
-    rollupOptions: {
-      external: ['@cells/cells-bridge', '@cells/cells-page-mixin']
-    }
-  },
-  test: {
-    environment: 'happy-dom',
-    include: ['test/unit/**/*.test.js']
-  }
-});
-`);
+async function runGeneratedNativeRuntime(project) {
+  const cliRoot = path.resolve(import.meta.dirname, '../..');
+  const runner = new NodeProcessRunner({ outputLimitBytes: 200_000 });
+  return runner.run({
+    file: path.join(cliRoot, 'node_modules', '.bin', 'vitest'),
+    args: ['run', 'test/unit/runtime.test.js'],
+    cwd: project,
+    env: {},
+    timeoutMs: 60_000
+  });
 }
 
 test('contract: every CLI 5 app profile emits the complete Bridge 4 learning tree', () => {
@@ -138,6 +137,7 @@ test('contract: every CLI 5 app profile emits the complete Bridge 4 learning tre
     'test/unit/channels.test.js',
     'test/unit/data-manager.test.js',
     'test/unit/locales.test.js',
+    'test/unit/runtime.test.js',
     'test/unit/dev/locales/locales.json',
     'test/unit/prod/locales/locales.json'
   ];
@@ -148,10 +148,13 @@ test('contract: every CLI 5 app profile emits the complete Bridge 4 learning tre
       assert.equal(files.has(required), true, `${profile} is missing ${required}`);
     }
     const metadata = JSON.parse(files.get('package.json'));
-    assert.equal(metadata.dependencies['@cells/cells-bridge'], '^4.0.0');
-    assert.equal(metadata.dependencies['@cells/cells-page-mixin'], '^2.0.0');
+    assert.equal(metadata.dependencies['@open-cells/core'], '1.2.1');
+    assert.equal(metadata.dependencies['@open-cells/page-mixin'], '1.2.4');
     assert.match(metadata.dependencies.lit, /^\^?3\./);
-    assert.equal(metadata.dependencies['@open-cells/core'], undefined);
+    assert.equal(metadata.dependencies['@cells/cells-bridge'], undefined);
+    assert.equal(metadata.dependencies['@cells/cells-page-mixin'], undefined);
+    assert.equal([...files.values()].some(source => /@cells\/|startBridge|CellsPageMixin/.test(source)), false);
+    assert.equal([...files.values()].some(source => /\bBridge\b/.test(source)), false);
     assert.equal([...files.keys()].some(path => path.startsWith('src/runtime/')), false);
   }
 });
@@ -181,8 +184,19 @@ test('contract: default application creation normalizes into the Bridge 4 payloa
   const metadata = JSON.parse(await readFile(path.join(project, 'package.json'), 'utf8'));
   const bootstrap = await readFile(path.join(project, 'app', 'scripts', 'app.js'), 'utf8');
   assert.equal(declaration.cellsVersion, '5');
-  assert.equal(metadata.dependencies['@cells/cells-bridge'], '^4.0.0');
-  assert.match(bootstrap, /startBridge/);
+  assert.equal(metadata.dependencies['@open-cells/core'], '1.2.1');
+  assert.equal(metadata.dependencies['@open-cells/page-mixin'], '1.2.4');
+  assert.match(bootstrap, /startApp/);
+  assert.doesNotMatch(bootstrap, /@cells\/|startBridge/);
+});
+
+test('red: generated CLI 5 runtime tests execute public Core and Page Mixin behavior without shims', async t => {
+  const { project } = await materializeBridge4Project(t, 'bridge4-public-runtime');
+  await enableHermeticBridgeBuild(project);
+
+  const result = await runGeneratedNativeRuntime(project);
+
+  assert.equal(result.exitCode, 0, result.stderr || result.stdout);
 });
 
 test('red: omitting the Cells version emits Bridge 4 while explicit Cells 4 preserves the legacy payload', () => {
@@ -297,6 +311,88 @@ test('red: actual Vite dev resolves only the validated Bridge 4 config module an
   }
 });
 
+test('red: real Chrome starts the public Open Cells runtime and exercises lifecycle behavior without method replacement', async t => {
+  const { filesystem, project } = await materializeBridge4Project(t, 'bridge4-public-browser-runtime');
+  await enableHermeticBridgeBuild(project);
+  const session = await WorkspaceSession.open(project, filesystem);
+  const captured = {};
+  const handle = await devApp(Object.freeze({
+    session,
+    toolchain: actualViteToolchain(captured),
+    configName: 'dev.js',
+    options: Object.freeze({ host: '127.0.0.1', port: 0, strictPort: true, open: false })
+  }));
+  let browser;
+  try {
+    const ready = await handle.ready;
+    browser = await chromium.launch({ channel: 'chrome', headless: true });
+    const page = await browser.newPage();
+    const runtimeErrors = [];
+    page.on('pageerror', error => runtimeErrors.push(error.message));
+
+    await page.goto(ready.url, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('heading', { name: 'Learning catalog' }).waitFor({ timeout: 15_000 });
+    const catalogRuntime = await page.locator('catalog-page').evaluate(element => ({
+      templateState: element.shadowRoot.querySelector('[data-cells-type="template"]').getAttribute('state'),
+      pageChannel: element.constructor.getPagePrivateChannel(element.localName),
+      nativeMethods: ['publish', 'navigate', 'subscribe', 'unsubscribe'].every(name => typeof element[name] === 'function')
+    }));
+    assert.deepEqual(catalogRuntime, {
+      templateState: 'active',
+      pageChannel: '__oc_page_catalog',
+      nativeMethods: true
+    });
+
+    await page.locator('catalog-page').evaluate(element => {
+      element.publish('academy-progress', Object.freeze({ lessonId: 'retained-progress', status: 'opened' }));
+      element.navigate('lesson', { lessonId: 'route-param' });
+    });
+    await page.waitForURL(url => url.hash === '#!/lesson/route-param', { timeout: 15_000 });
+    await page.getByRole('heading', { name: 'Lesson: route-param' }).waitFor({ timeout: 15_000 });
+    await page.getByText('Latest progress: retained-progress.').waitFor({ timeout: 15_000 });
+    const lessonRuntime = await page.locator('lesson-page').evaluate(element => ({
+      templateState: element.shadowRoot.querySelector('[data-cells-type="template"]').getAttribute('state'),
+      pageChannel: element.constructor.getPagePrivateChannel(element.localName),
+      params: element.params
+    }));
+    assert.deepEqual(lessonRuntime, {
+      templateState: 'active',
+      pageChannel: '__oc_page_lesson',
+      params: { lessonId: 'route-param' }
+    });
+
+    const cancellation = await page.locator('lesson-page').evaluate(async element => {
+      const manager = element.shadowRoot.querySelector('lesson-data-manager');
+      const event = new Promise(resolve => manager.addEventListener('lesson-data-cancelled', value => resolve(value.detail.status), { once: true }));
+      const pending = manager.load({ lessonId: 'route-param', mode: 'delayed' });
+      element.navigate('catalog');
+      return { result: await pending, event: await event };
+    });
+    assert.deepEqual(cancellation, {
+      result: { status: 'cancelled', lessonId: 'route-param' },
+      event: 'cancelled'
+    });
+    await page.waitForURL(url => url.hash === '#!/', { timeout: 15_000 });
+    await page.getByRole('heading', { name: 'Learning catalog' }).waitFor({ timeout: 15_000 });
+
+    const outputAfterLeave = await page.locator('lesson-page').evaluate(element => element.shadowRoot.querySelector('output').textContent);
+    await page.locator('catalog-page').evaluate(element => element.publish('academy-progress', Object.freeze({ lessonId: 'after-leave', status: 'opened' })));
+    await page.waitForTimeout(50);
+    const outputAfterPublish = await page.locator('lesson-page').evaluate(element => element.shadowRoot.querySelector('output').textContent);
+    assert.equal(outputAfterPublish, outputAfterLeave);
+
+    await page.getByRole('button', { name: 'Spanish' }).click();
+    await page.getByRole('heading', { name: 'Catálogo de aprendizaje' }).waitFor({ timeout: 15_000 });
+    assert.equal(await page.locator('html').getAttribute('lang'), 'es');
+    assert.equal(await page.title(), 'Catálogo de aprendizaje Open Cells');
+    assert.deepEqual(runtimeErrors, []);
+  } finally {
+    await browser?.close();
+    await handle.close();
+    assert.equal(captured.server.httpServer.listening, false);
+  }
+});
+
 test('red: Bridge 4 pages render a Cells template contract instead of a plain Lit wrapper', () => {
   const files = bridge4Files('academy-app');
   const catalogTemplate = files.get('app/tpls/catalog-page-template.js');
@@ -307,12 +403,14 @@ test('red: Bridge 4 pages render a Cells template contract instead of a plain Li
   for (const template of [catalogTemplate, lessonTemplate]) {
     assert.match(template, /data-cells-type/);
     assert.match(template, /state/);
-    assert.match(template, /'active'/);
+    assert.match(template, /'inactive'/);
     assert.match(template, /slot name="app-main-content"/);
   }
-  assert.match(catalogPage, /<catalog-page-template[\s\S]*data-cells-type="template"[\s\S]*state="active"/);
+  assert.match(catalogPage, /<catalog-page-template[\s\S]*data-cells-type="template"/);
+  assert.doesNotMatch(catalogPage, /state="active"/);
   assert.match(catalogPage, /slot="app-main-content"/);
-  assert.match(lessonPage, /<lesson-page-template[\s\S]*data-cells-type="template"[\s\S]*state="active"/);
+  assert.match(lessonPage, /<lesson-page-template[\s\S]*data-cells-type="template"/);
+  assert.doesNotMatch(lessonPage, /state="active"/);
   assert.match(lessonPage, /slot="app-main-content"/);
 });
 
@@ -325,12 +423,17 @@ test('red: Bridge 4 generated tests use the public page contract and drive the E
 
   assert.match(bootstrap, /setLanguage\('en'\)/);
   assert.doesNotMatch(documentShell, /<title>[^<]+<\/title>/);
-  assert.match(channels, /CellsPageMixin\(LitElement\)/);
-  assert.match(channels, /onPageEnter/);
-  assert.match(channels, /onPageLeave/);
-  assert.match(channels, /retained progress lifecycle/);
-  assert.doesNotMatch(channels, /native latest progress/);
-  assert.doesNotMatch(channels, /page\.(publish|navigate|subscribe|unsubscribe)\s*=/);
+  const runtime = files.get('test/unit/runtime.test.js');
+
+  assert.match(channels, /createProgress/);
+  assert.match(channels, /immutable public progress value/);
+  assert.doesNotMatch(channels, /\?raw|CellsPageMixin|startBridge|@cells\//);
+  assert.match(runtime, /startApp/);
+  assert.match(runtime, /getPagePrivateChannel/);
+  assert.match(runtime, /pluginCellsCoreAPI/);
+  assert.match(runtime, /retained-progress/);
+  assert.match(runtime, /lesson-data-cancelled/);
+  assert.doesNotMatch(runtime, /page\.(publish|navigate|subscribe|unsubscribe)\s*=/);
   assert.match(locales, /button\[data-language="es"\]/);
   assert.match(locales, /\.click\(\)/);
   assert.match(locales, /document\.documentElement\.lang/);
@@ -363,7 +466,7 @@ test('contract: CLI 5 E2E material is an optional Bridge 4 overlay', () => {
   assert.match(overlay.get('e2e/bridge4-app.spec.js'), /introduction/);
 });
 
-test('contract: CLI 5 app routes and pages declare Bridge 4 navigation lifecycle boundaries', () => {
+test('contract: CLI 5 app routes and pages declare public Open Cells navigation lifecycle boundaries', () => {
   const files = bridge4Files('web-app');
   const bootstrap = files.get('app/scripts/app.js');
   const channels = files.get('app/scripts/channels.js');
@@ -371,7 +474,7 @@ test('contract: CLI 5 app routes and pages declare Bridge 4 navigation lifecycle
   const catalog = files.get('app/pages/catalog-page/catalog-page.js');
   const lesson = files.get('app/pages/lesson-page/lesson-page.js');
 
-  assert.match(bootstrap, /startBridge\(\{[\s\S]*routes[\s\S]*mainNode[\s\S]*cells_properties[\s\S]*appConfig/);
+  assert.match(bootstrap, /startApp\(\{[\s\S]*routes[\s\S]*mainNode[\s\S]*cells_properties[\s\S]*appConfig/);
   assert.match(routes, /Object\.freeze/);
   assert.match(routes, /path: '\/'/);
   assert.match(routes, /path: '\/lesson\/:lessonId'/);
@@ -379,12 +482,12 @@ test('contract: CLI 5 app routes and pages declare Bridge 4 navigation lifecycle
   assert.match(routes, /async action\(\)/);
   assert.match(routes, /import\('\.\.\/pages\/catalog-page\/catalog-page\.js'\)/);
   assert.match(routes, /import\('\.\.\/pages\/lesson-page\/lesson-page\.js'\)/);
-  assert.match(catalog, /CellsPageMixin\(LitElement\)/);
+  assert.match(catalog, /PageMixin\(LitElement\)/);
   assert.match(catalog, /navigate\('lesson', \{ lessonId \}\)/);
   assert.match(channels, /academy-progress/);
   assert.match(catalog, /this\.publish\(ACADEMY_PROGRESS_CHANNEL/);
   assert.match(catalog, /<catalog-page-template/);
-  assert.match(lesson, /CellsPageMixin\(LitElement\)/);
+  assert.match(lesson, /PageMixin\(LitElement\)/);
   assert.match(lesson, /onPageEnter\(\)/);
   assert.match(lesson, /onPageLeave\(\)/);
   assert.match(lesson, /unsubscribe/);
@@ -396,11 +499,13 @@ test('contract: CLI 5 generated tests cover retained progress, fixture states, a
   const channels = files.get('test/unit/channels.test.js');
   const dataManager = files.get('test/unit/data-manager.test.js');
   const locales = files.get('test/unit/locales.test.js');
+  const runtime = files.get('test/unit/runtime.test.js');
   const catalogs = JSON.parse(files.get('app/locales-app/locales.json'));
 
-  assert.match(channels, /retained/);
-  assert.match(channels, /onPageEnter/);
-  assert.match(channels, /onPageLeave/);
+  assert.match(channels, /immutable/);
+  assert.match(runtime, /retained-progress/);
+  assert.match(runtime, /after-leave/);
+  assert.match(runtime, /cancelled/);
   assert.match(dataManager, /loading/);
   assert.match(dataManager, /success/);
   assert.match(dataManager, /error/);
@@ -449,7 +554,7 @@ test('contract: CLI 5 generated source and locale validators run against the Bri
   }
 });
 
-test('contract: CLI 5 generated declarative unit tests avoid a Page Mixin shim', async t => {
+test('contract: CLI 5 generated unit tests execute with the installed public runtime', async t => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'open-cells-bridge4-unit-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   await writeFile(path.join(root, 'package.json'), '{"name":"bridge4-unit-owner","private":true}\n');
@@ -461,11 +566,8 @@ test('contract: CLI 5 generated declarative unit tests avoid a Page Mixin shim',
     cellsVersion: '5'
   });
   const publication = await filesystem.applyPlanAtomically(owner, plan, 'bridge4-unit');
-  const nodeModules = path.join(publication.destination, 'node_modules');
   const cliRoot = path.resolve(import.meta.dirname, '../..');
-  await mkdir(nodeModules, { recursive: true });
-  await symlink(path.join(cliRoot, 'node_modules', 'lit'), path.join(nodeModules, 'lit'), 'dir');
-  await symlink(path.join(cliRoot, 'node_modules', 'vitest'), path.join(nodeModules, 'vitest'), 'dir');
+  await symlink(path.join(cliRoot, 'node_modules'), path.join(publication.destination, 'node_modules'), 'dir');
   const runner = new NodeProcessRunner({ outputLimitBytes: 200_000 });
   const result = await runner.run({
     file: path.join(cliRoot, 'node_modules', '.bin', 'vitest'),

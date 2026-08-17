@@ -58,7 +58,7 @@ function localeCatalogSource(profile) {
       'app.title': title.en,
       'catalog.title': 'Learning catalog',
       'catalog.description': 'Choose a local lesson to practice named routes, channels, and data states.',
-      'catalog.lesson.title': 'Bridge fundamentals',
+      'catalog.lesson.title': 'Open Cells fundamentals',
       'catalog.lesson.description': 'Open the lesson with a named route and an object parameter.',
       'catalog.openLesson': 'Open lesson',
       'catalog.progress': 'Catalog progress published for {lessonId}.',
@@ -69,7 +69,7 @@ function localeCatalogSource(profile) {
       'lesson.state.success': 'Local lesson data is ready.',
       'lesson.state.error': 'Local lesson data is unavailable.',
       'lesson.state.cancelled': 'Local lesson request was cancelled.',
-      'fixture.lesson.introduction': 'This local fixture explains Bridge routes and page lifecycle hooks.',
+      'fixture.lesson.introduction': 'This local fixture explains Open Cells routes and page lifecycle hooks.',
       'fixture.lesson.notFound': 'This local fixture keeps the requested lesson available for practice.',
       'language.switcher': 'Choose language',
       'language.en': 'English',
@@ -79,7 +79,7 @@ function localeCatalogSource(profile) {
       'app.title': title.es,
       'catalog.title': 'Catálogo de aprendizaje',
       'catalog.description': 'Elige una lección local para practicar rutas con nombre, canales y estados de datos.',
-      'catalog.lesson.title': 'Fundamentos de Bridge',
+      'catalog.lesson.title': 'Fundamentos de Open Cells',
       'catalog.lesson.description': 'Abre la lección con una ruta con nombre y un parámetro de objeto.',
       'catalog.openLesson': 'Abrir lección',
       'catalog.progress': 'Progreso del catálogo publicado para {lessonId}.',
@@ -90,7 +90,7 @@ function localeCatalogSource(profile) {
       'lesson.state.success': 'Los datos locales de la lección están listos.',
       'lesson.state.error': 'Los datos locales de la lección no están disponibles.',
       'lesson.state.cancelled': 'La solicitud local de la lección fue cancelada.',
-      'fixture.lesson.introduction': 'Este fixture local explica las rutas de Bridge y los hooks del ciclo de vida de página.',
+      'fixture.lesson.introduction': 'Este fixture local explica las rutas de Open Cells y los hooks del ciclo de vida de página.',
       'fixture.lesson.notFound': 'Este fixture local mantiene disponible la lección solicitada para practicar.',
       'language.switcher': 'Elegir idioma',
       'language.en': 'Inglés',
@@ -161,7 +161,7 @@ export const routes = ROUTES;
 }
 
 function appSource() {
-  return `import { startBridge } from '@cells/cells-bridge';
+  return `import { startApp } from '@open-cells/core';
 import appConfig from 'virtual:open-cells-app-config';
 import { ROUTES } from './app-routes.js';
 import { setLanguage } from './localization.js';
@@ -169,7 +169,7 @@ import './lit-initial-components.js';
 
 setLanguage('en');
 
-startBridge({
+startApp({
   routes: ROUTES,
   mainNode: 'app__content',
   ...appConfig.cells_properties,
@@ -210,7 +210,7 @@ export class CatalogPageTemplate extends LitElement {
   constructor() {
     super();
     this.language = currentLanguage();
-    this.state = 'active';
+    this.state = 'inactive';
     this.setAttribute('data-cells-type', 'template');
   }
 
@@ -246,7 +246,7 @@ export class LessonPageTemplate extends LitElement {
 
   constructor() {
     super();
-    this.state = 'active';
+    this.state = 'inactive';
     this.setAttribute('data-cells-type', 'template');
   }
 
@@ -264,13 +264,13 @@ if (customElements.get('lesson-page-template') === undefined) {
 }
 
 function catalogPageSource() {
-  return `import { CellsPageMixin } from '@cells/cells-page-mixin';
+  return `import { PageMixin } from '@open-cells/page-mixin';
 import { LitElement, html } from 'lit';
 import { ACADEMY_PROGRESS_CHANNEL, createProgress } from '../../scripts/channels.js';
 import { currentLanguage, t } from '../../scripts/localization.js';
 import '../../tpls/catalog-page-template.js';
 
-export class CatalogPage extends CellsPageMixin(LitElement) {
+export class CatalogPage extends PageMixin(LitElement) {
   static get is() {
     return 'catalog-page';
   }
@@ -314,7 +314,6 @@ export class CatalogPage extends CellsPageMixin(LitElement) {
   render() {
     return html\`<catalog-page-template
       data-cells-type="template"
-      state="active"
       .language=\${this.language}
     >
       <section slot="app-main-content" aria-labelledby="catalog-title">
@@ -390,7 +389,11 @@ export class LessonDataManager extends LitElement {
     const request = { controller: new AbortController(), settled: false };
     this.activeRequest = request;
     this.transition('loading', { lessonId });
-    await Promise.resolve();
+    if (mode === 'delayed') {
+      await new Promise(resolve => setTimeout(resolve, 25));
+    } else {
+      await Promise.resolve();
+    }
     if (request.settled || request.controller.signal.aborted || this.activeRequest !== request) {
       return Object.freeze({ status: 'cancelled', lessonId });
     }
@@ -399,7 +402,7 @@ export class LessonDataManager extends LitElement {
     if (mode === 'error') {
       return this.transition('error', { code: 'LOCAL_FIXTURE_UNAVAILABLE', lessonId });
     }
-    if (mode !== 'success') throw new TypeError('Unsupported local fixture mode');
+    if (mode !== 'success' && mode !== 'delayed') throw new TypeError('Unsupported local fixture mode');
     const data = lessonFixtures[lessonId] ?? Object.freeze({ lessonId, messageKey: 'fixture.lesson.notFound' });
     return this.transition('success', { data, lessonId });
   }
@@ -412,14 +415,14 @@ if (customElements.get(LessonDataManager.is) === undefined) {
 }
 
 function lessonPageSource() {
-  return `import { CellsPageMixin } from '@cells/cells-page-mixin';
+  return `import { PageMixin } from '@open-cells/page-mixin';
 import { LitElement, html } from 'lit';
 import { ACADEMY_PROGRESS_CHANNEL } from '../../scripts/channels.js';
 import { currentLanguage, t } from '../../scripts/localization.js';
 import '../../data-managers/lesson-data-manager.js';
 import '../../tpls/lesson-page-template.js';
 
-export class LessonPage extends CellsPageMixin(LitElement) {
+export class LessonPage extends PageMixin(LitElement) {
   static get is() {
     return 'lesson-page';
   }
@@ -481,7 +484,6 @@ export class LessonPage extends CellsPageMixin(LitElement) {
     const messageKey = this.dataState?.data?.messageKey;
     return html\`<lesson-page-template
       data-cells-type="template"
-      state="active"
       .language=\${this.language}
     >
       <section slot="app-main-content" aria-labelledby="lesson-title">
@@ -548,6 +550,13 @@ lesson-page-template {
   padding: 2rem;
 }
 
+catalog-page-template[state="cached"],
+catalog-page-template[state="inactive"],
+lesson-page-template[state="cached"],
+lesson-page-template[state="inactive"] {
+  display: none;
+}
+
 article {
   border: 1px solid #cbd5e1;
   border-radius: .5rem;
@@ -567,12 +576,25 @@ button {
 }
 
 function viteConfigSource() {
-  return `import { defineConfig } from 'vitest/config';
+  return `import { fileURLToPath } from 'node:url';
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
     environment: 'happy-dom',
-    include: ['test/unit/**/*.test.js']
+    fileParallelism: false,
+    include: ['test/unit/**/*.test.js'],
+    deps: {
+      optimizer: {
+        web: {
+          enabled: true,
+          include: ['@open-cells/core', '@open-cells/core-plugin', '@open-cells/page-mixin']
+        }
+      }
+    },
+    alias: {
+      'virtual:open-cells-app-config': fileURLToPath(new URL('./app/config/dev.js', import.meta.url))
+    }
   }
 });
 `;
@@ -624,7 +646,7 @@ async function sourceFiles(directory) {
 
 const files = await sourceFiles(fileURLToPath(new URL('../app/', import.meta.url)));
 for (const file of files) await readFile(file, 'utf8');
-if (files.length === 0) throw new Error('Expected Bridge 4 application sources.');
+if (files.length === 0) throw new Error('Expected Open Cells application sources.');
 `;
 }
 
@@ -647,9 +669,9 @@ for (const language of languages) {
 }
 
 function readmeSource() {
-  return `# Open Cells Bridge 4 learning app
+  return `# Open Cells learning app
 
-This generated application uses Bridge 4, Lit 3, named routes, and page lifecycle hooks. Start it with \`cells app:dev -c dev.js\`, build it with \`cells app:build -c prod.js\`, and preview it with \`cells app:preview -c prod.js\`.
+This generated application uses the public Open Cells runtime, Lit 3, named routes, and page lifecycle hooks. Start it with \`cells app:dev -c dev.js\`, build it with \`cells app:build -c prod.js\`, and preview it with \`cells app:preview -c prod.js\`.
 
 The catalog publishes the public \`academy-progress\` channel. The lesson consumes its latest value when it enters and unsubscribes when it leaves. Route parameters carry the selected lesson identifier, while the nonvisual data manager serves local fixture data only.
 
@@ -660,9 +682,8 @@ Run \`cells app:test\` for generated unit tests and \`cells app:locales\` to val
 function routesTestSource() {
   return `import { describe, expect, it } from 'vitest';
 import { ROUTES } from '../../app/scripts/app-routes.js';
-import routeSource from '../../app/scripts/app-routes.js?raw';
 
-describe('Bridge 4 routes', () => {
+describe('Open Cells routes', () => {
   it('declares named catalog and lesson routes with a lesson parameter', () => {
     expect(ROUTES.map(route => ({ name: route.name, path: route.path }))).toEqual([
       { name: 'catalog', path: '/' },
@@ -672,9 +693,10 @@ describe('Bridge 4 routes', () => {
     expect(ROUTES.every(Object.isFrozen)).toBe(true);
   });
 
-  it('keeps lazy page actions in the public route contract', () => {
-    expect(routeSource).toContain("await import('../pages/catalog-page/catalog-page.js')");
-    expect(routeSource).toContain("await import('../pages/lesson-page/lesson-page.js')");
+  it('loads both pages through their lazy route actions', async () => {
+    await Promise.all(ROUTES.map(route => route.action()));
+    expect(customElements.get('catalog-page')).toBeDefined();
+    expect(customElements.get('lesson-page')).toBeDefined();
   });
 });
 `;
@@ -683,23 +705,100 @@ describe('Bridge 4 routes', () => {
 function channelsTestSource() {
   return `import { describe, expect, it } from 'vitest';
 import { ACADEMY_PROGRESS_CHANNEL, createProgress } from '../../app/scripts/channels.js';
-import catalogSource from '../../app/pages/catalog-page/catalog-page.js?raw';
-import lessonSource from '../../app/pages/lesson-page/lesson-page.js?raw';
 
-describe('Bridge 4 progress channel', () => {
-  it('publishes progress and navigates with an object route parameter', () => {
-    expect(createProgress('introduction')).toEqual({ lessonId: 'introduction', status: 'opened' });
-    expect(catalogSource).toContain('CellsPageMixin(LitElement)');
-    expect(catalogSource).toContain('this.publish(ACADEMY_PROGRESS_CHANNEL, progress)');
-    expect(catalogSource).toContain("this.navigate('lesson', { lessonId })");
+describe('Open Cells progress channel', () => {
+  it('creates an immutable public progress value', () => {
+    const progress = createProgress('introduction');
+    expect(ACADEMY_PROGRESS_CHANNEL).toBe('academy-progress');
+    expect(progress).toEqual({ lessonId: 'introduction', status: 'opened' });
+    expect(Object.isFrozen(progress)).toBe(true);
   });
+});
+`;
+}
 
-  it('declares the retained progress lifecycle subscription on enter and removes it on leave', () => {
-    expect(lessonSource).toContain('CellsPageMixin(LitElement)');
-    expect(lessonSource).toMatch(/onPageEnter\\(\\)[\\s\\S]*this\\.subscribe\\(ACADEMY_PROGRESS_CHANNEL, this\\.receiveProgress\\)/);
-    expect(lessonSource).toMatch(/onPageLeave\\(\\)[\\s\\S]*this\\.unsubscribe\\(ACADEMY_PROGRESS_CHANNEL\\)/);
-    expect(lessonSource).toContain('ACADEMY_PROGRESS_CHANNEL');
-  });
+function runtimeTestSource() {
+  return `import { describe, expect, it } from 'vitest';
+import { getConfig, startApp } from '@open-cells/core';
+import { CatalogPageTemplate } from '../../app/tpls/catalog-page-template.js';
+import { ACADEMY_PROGRESS_CHANNEL, createProgress } from '../../app/scripts/channels.js';
+import { t } from '../../app/scripts/localization.js';
+import { ROUTES } from '../../app/scripts/app-routes.js';
+
+const nextTask = () => new Promise(resolve => setTimeout(resolve, 0));
+
+async function waitFor(condition) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const value = condition();
+    if (value) return value;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  throw new Error('Timed out waiting for the Open Cells runtime.');
+}
+
+function pageTemplate(page) {
+  return page.shadowRoot?.querySelector('[data-cells-type="template"]');
+}
+
+describe('public Open Cells application runtime', () => {
+  it('starts routes, delivers retained progress, cancels on leave, and changes visible language', async () => {
+    const inactiveTemplate = new CatalogPageTemplate();
+    document.body.append(inactiveTemplate);
+    await inactiveTemplate.updateComplete;
+    expect(inactiveTemplate.getAttribute('state')).toBe('inactive');
+    inactiveTemplate.remove();
+
+    const mainNode = document.createElement('main');
+    mainNode.id = 'app__content';
+    document.body.replaceChildren(mainNode);
+    window.location.hash = '#!/';
+    await Promise.all(ROUTES.map(route => route.action()));
+    await import('../../app/scripts/app.js');
+
+    const catalog = await waitFor(() => document.querySelector('catalog-page'));
+    const catalogTemplate = await waitFor(() => pageTemplate(catalog)?.getAttribute('state') === 'active' && pageTemplate(catalog));
+    expect(typeof startApp).toBe('function');
+    expect(catalog.constructor.getPagePrivateChannel('catalog-page')).toBe('__oc_page_catalog');
+    expect(typeof catalog.pluginCellsCoreAPI).toBe('function');
+    expect(typeof catalog.publish).toBe('function');
+    expect(typeof catalog.navigate).toBe('function');
+    expect(getConfig()?.mainNode).toBe('app__content');
+    expect(catalogTemplate.getAttribute('data-cells-type')).toBe('template');
+    expect(catalogTemplate.getAttribute('state')).toBe('active');
+
+    catalog.publish(ACADEMY_PROGRESS_CHANNEL, createProgress('retained-progress'));
+    catalog.navigate('lesson', { lessonId: 'route-param' });
+
+    const lesson = await waitFor(() => document.querySelector('lesson-page'));
+    await waitFor(() => pageTemplate(lesson)?.getAttribute('state') === 'active');
+    await waitFor(() => lesson.params?.lessonId === 'route-param');
+    const lessonOutput = await waitFor(() => lesson.shadowRoot?.querySelector('output'));
+    await waitFor(() => lessonOutput.textContent.includes('retained-progress'));
+    expect(lesson.constructor.getPagePrivateChannel('lesson-page')).toBe('__oc_page_lesson');
+    expect(typeof lesson.subscribe).toBe('function');
+    expect(typeof lesson.unsubscribe).toBe('function');
+    expect(window.location.hash).toBe('#!/lesson/route-param');
+    expect(lesson.params).toMatchObject({ lessonId: 'route-param' });
+
+    const manager = await waitFor(() => lesson.shadowRoot?.querySelector('lesson-data-manager'));
+    const cancelled = [];
+    manager.addEventListener('lesson-data-cancelled', event => cancelled.push(event.detail.status));
+    const pending = manager.load({ lessonId: 'route-param', mode: 'delayed' });
+    lesson.navigate('catalog');
+    await waitFor(() => pageTemplate(catalog)?.getAttribute('state') === 'active');
+    expect(await pending).toMatchObject({ status: 'cancelled', lessonId: 'route-param' });
+    expect(cancelled).toEqual(['cancelled']);
+
+    const valueAfterLeave = lessonOutput.textContent;
+    catalog.publish(ACADEMY_PROGRESS_CHANNEL, createProgress('after-leave'));
+    await nextTask();
+    expect(lessonOutput.textContent).toBe(valueAfterLeave);
+
+    const languageButton = catalogTemplate.shadowRoot.querySelector('button[data-language="es"]');
+    languageButton.click();
+    await waitFor(() => document.documentElement.lang === 'es' && catalog.shadowRoot.textContent.includes('Catálogo de aprendizaje'));
+    expect(document.title).toBe(t('app.title'));
+  }, 15000);
 });
 `;
 }
@@ -820,6 +919,7 @@ export function createBridge4Sources(profile, name, { e2e = false } = {}) {
     'test/unit/channels.test.js': channelsTestSource(),
     'test/unit/data-manager.test.js': dataManagerTestSource(),
     'test/unit/locales.test.js': localesTestSource(),
+    'test/unit/runtime.test.js': runtimeTestSource(),
     'test/unit/routes.test.js': routesTestSource(),
     'test/unit/dev/locales/locales.json': locales,
     'test/unit/prod/locales/locales.json': locales
