@@ -82,6 +82,40 @@ test('break: inline, safe file, and interactive app input stop reaching one iden
   }
 });
 
+test('contract: creation records an explicit Open Cells version and rejects every other version value', async t => {
+  const { filesystem, root, session } = await fixture(t);
+  const createContext = context({ filesystem, session });
+
+  const modern = await createApp(
+    { scaffold: { name: 'modern-app', scaffold: 'blank' } },
+    createContext
+  );
+  const legacy = await createApp(
+    { scaffold: { name: 'legacy-app', scaffold: 'web-app', cellsVersion: '4' } },
+    createContext
+  );
+  const legacyComponent = await createComponent(
+    { scaffold: { name: 'legacy-card', namespace: '@academy', cellsVersion: '4' } },
+    createContext
+  );
+
+  assert.equal(modern.ok, true);
+  assert.equal(legacy.ok, true);
+  assert.equal(legacyComponent.ok, true);
+  assert.equal((await generated(root, 'modern-app')).declaration.cellsVersion, '5');
+  assert.equal((await generated(root, 'legacy-app')).declaration.cellsVersion, '4');
+  assert.equal((await generated(root, 'legacy-card')).declaration.cellsVersion, '4');
+
+  for (const [index, cellsVersion] of [4, 5, '3', '4.9', '5.1', ''].entries()) {
+    const result = await createApp(
+      { scaffold: { name: `invalid-version-${index}`, scaffold: 'blank', cellsVersion } },
+      createContext
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.code, 'INVALID_INPUT');
+  }
+});
+
 test('break: invalid app schemas, unknown profiles, malformed JSON, and unknown fields stop publishing a target', async t => {
   const { filesystem, root, session } = await fixture(t);
   await mkdir(path.join(root, 'inputs'));

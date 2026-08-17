@@ -7,13 +7,8 @@ const ROOT_VERSION_OPTIONS = new Set(['--version', '-v']);
 const LANGUAGE_OPTIONS = new Set(['--language', '-l']);
 const COMMAND_ALIASES = new Map([
   ['app:serve', 'app:dev'],
-  ['lit-component:serve', 'component:dev'],
-  ['lit-components:serve', 'component:dev'],
-  ['lit-component:test', 'component:test'],
-  ['lit-component:documentation', 'component:documentation'],
-  ['lit-component:locales', 'component:locales'],
+  ['lit-components:serve', 'component:serve'],
   ['lit-component:build:demo', 'component:build:demo'],
-  ['lit-component:lint', 'component:lint']
 ]);
 
 function freezeResult(result) {

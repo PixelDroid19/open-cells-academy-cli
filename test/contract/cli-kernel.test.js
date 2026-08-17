@@ -240,7 +240,105 @@ const COMMAND_CONTRACTS = [
     ]
   },
   {
+    name: 'component:serve',
+    options: [
+      { name: 'port', aliases: ['-p', '--port'], type: 'number', defaultValue: 8001, required: false },
+      { name: 'open', aliases: ['-o', '--open'], type: 'boolean', defaultValue: true, required: false },
+      { name: 'host', aliases: ['--host'], type: 'string', defaultValue: '127.0.0.1', required: false },
+      { name: 'strictPort', aliases: ['--strictPort'], type: 'boolean', defaultValue: false, required: false },
+      {
+        name: 'sassLogLevel',
+        aliases: ['--sassLogLevel'],
+        type: 'string',
+        defaultValue: 'warn',
+        required: false,
+        choices: ['verbose', 'warn', 'error']
+      }
+    ]
+  },
+  {
     name: 'component:test',
+    options: [
+      { name: 'wtr', aliases: ['--wtr'], type: 'boolean', defaultValue: false, required: false },
+      { name: 'watch', aliases: ['-w', '--watch'], type: 'boolean', defaultValue: false, required: false },
+      {
+        name: 'updateSnapshots',
+        aliases: ['--updateSnapshots'],
+        type: 'boolean',
+        defaultValue: false,
+        required: false
+      },
+      {
+        name: 'updateLocales',
+        aliases: ['--updateLocales'],
+        type: 'boolean',
+        defaultValue: false,
+        required: false
+      },
+      { name: 'coverage', aliases: ['--coverage'], type: 'boolean', defaultValue: false, required: false },
+      {
+        name: 'wtrTestsFinishTimeout',
+        aliases: ['--wtrTestsFinishTimeout'],
+        type: 'number',
+        defaultValue: 120000,
+        required: false
+      }
+    ]
+  },
+  {
+    name: 'lit-component:create',
+    options: [
+      { name: 'e2e', aliases: ['--e2e'], type: 'boolean', defaultValue: false, required: false },
+      { name: 'scaffold', aliases: ['-s', '--scaffold'], type: 'jsonOrPath', required: false },
+      {
+        name: 'installDeps',
+        aliases: ['--install-deps'],
+        type: 'boolean',
+        defaultValue: false,
+        required: false
+      }
+    ]
+  },
+  {
+    name: 'lit-component:documentation',
+    options: [
+      { name: 'mdFile', aliases: ['--mdFile'], type: 'string', defaultValue: 'README.md', required: false },
+      { name: 'noMd', aliases: ['--noMd'], type: 'boolean', defaultValue: false, required: false }
+    ]
+  },
+  {
+    name: 'lit-component:lint',
+    options: [
+      { name: 'fix', aliases: ['--fix'], type: 'boolean', defaultValue: false, required: false },
+      {
+        name: 'abortOnFailure',
+        aliases: ['--abortOnFailure'],
+        type: 'boolean',
+        defaultValue: false,
+        required: false
+      }
+    ]
+  },
+  { name: 'lit-component:locales', options: [] },
+  {
+    name: 'lit-component:serve',
+    options: [
+      { name: 'port', aliases: ['-p', '--port'], type: 'number', defaultValue: 8001, required: false },
+      { name: 'open', aliases: ['-o', '--open'], type: 'boolean', defaultValue: true, required: false },
+      { name: 'host', aliases: ['--host'], type: 'string', defaultValue: '127.0.0.1', required: false },
+      { name: 'strictPort', aliases: ['--strictPort'], type: 'boolean', defaultValue: false, required: false },
+      {
+        name: 'sassLogLevel',
+        aliases: ['--sassLogLevel'],
+        type: 'string',
+        defaultValue: 'warn',
+        required: false,
+        choices: ['verbose', 'warn', 'error']
+      }
+    ]
+  },
+  {
+    name: 'lit-component:test',
     options: [
       { name: 'wtr', aliases: ['--wtr'], type: 'boolean', defaultValue: false, required: false },
       { name: 'watch', aliases: ['-w', '--watch'], type: 'boolean', defaultValue: false, required: false },
@@ -321,7 +419,7 @@ function expectedValue(option) {
 test('break: removing any canonical command or changing its declared public grammar', () => {
   const registry = createCommandRegistry();
 
-  assert.equal(registry.size, 19);
+  assert.equal(registry.size, 26);
   assert.deepEqual([...registry.keys()], COMMAND_CONTRACTS.map(contract => contract.name));
 
   for (const contract of COMMAND_CONTRACTS) {
@@ -484,9 +582,17 @@ test('break: declared long boolean options no longer accept their standard --no-
   assert.match(help, /--no-open/);
 });
 
-test('contract: legacy lit-component commands parse to their canonical component commands', () => {
+test('contract: CLI 4 component commands parse to executable compatibility records', () => {
   const registry = createCommandRegistry();
+  const componentServe = parseArgv(['component:serve', '--host', '127.0.0.1', '--port', '41098', '--no-open'], registry, {
+    env: {},
+    locale: 'en_US.UTF-8'
+  });
   const serve = parseArgv(['lit-component:serve', '--host', '127.0.0.1', '--port', '41099', '--no-open'], registry, {
+    env: {},
+    locale: 'en_US.UTF-8'
+  });
+  const create = parseArgv(['lit-component:create', '--e2e', '--scaffold', '{"name":"legacy-card","namespace":"@academy","componentBase":"lit1"}'], registry, {
     env: {},
     locale: 'en_US.UTF-8'
   });
@@ -494,22 +600,47 @@ test('contract: legacy lit-component commands parse to their canonical component
     env: {},
     locale: 'en_US.UTF-8'
   });
+  const lint = parseArgv(['lit-component:lint', '--fix'], registry, {
+    env: {},
+    locale: 'en_US.UTF-8'
+  });
+  const locales = parseArgv(['lit-component:locales'], registry, {
+    env: {},
+    locale: 'en_US.UTF-8'
+  });
   const docs = parseArgv(['help', 'lit-component:documentation'], registry, {
     env: {},
     locale: 'en_US.UTF-8'
   });
+  const pluralServe = parseArgv(['lit-components:serve'], registry, {
+    env: {},
+    locale: 'en_US.UTF-8'
+  });
 
+  assert.equal(componentServe.ok, true, JSON.stringify(componentServe));
+  assert.equal(componentServe.command.name, 'component:serve');
+  assert.equal(componentServe.options.port, 41098);
   assert.equal(serve.ok, true, JSON.stringify(serve));
-  assert.equal(serve.command.name, 'component:dev');
+  assert.equal(serve.command.name, 'lit-component:serve');
   assert.equal(serve.options.host, '127.0.0.1');
   assert.equal(serve.options.port, 41099);
   assert.equal(serve.options.open, false);
+  assert.equal(create.ok, true, JSON.stringify(create));
+  assert.equal(create.command.name, 'lit-component:create');
+  assert.equal(create.options.scaffold.componentBase, 'lit1');
   assert.equal(testCommand.ok, true, JSON.stringify(testCommand));
-  assert.equal(testCommand.command.name, 'component:test');
+  assert.equal(testCommand.command.name, 'lit-component:test');
   assert.equal(testCommand.options.wtr, true);
   assert.equal(testCommand.options.watch, true);
+  assert.equal(lint.ok, true, JSON.stringify(lint));
+  assert.equal(lint.command.name, 'lit-component:lint');
+  assert.equal(lint.options.fix, true);
+  assert.equal(locales.ok, true, JSON.stringify(locales));
+  assert.equal(locales.command.name, 'lit-component:locales');
   assert.equal(docs.ok, true, JSON.stringify(docs));
-  assert.equal(docs.command.name, 'component:documentation');
+  assert.equal(docs.command.name, 'lit-component:documentation');
+  assert.equal(pluralServe.ok, true, JSON.stringify(pluralServe));
+  assert.equal(pluralServe.command.name, 'component:serve');
 });
 
 test('contract: legacy app:serve parses to canonical app:dev with a nested market config', () => {

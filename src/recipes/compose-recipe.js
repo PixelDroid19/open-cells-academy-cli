@@ -20,6 +20,7 @@ export const profileRegistry = createReadonlyMap([
 ]);
 
 const DEPENDENCY_FIELDS = Object.freeze({ runtime: 'dependencies', dev: 'devDependencies', optional: 'optionalDependencies', peer: 'peerDependencies' });
+const CELLS_VERSIONS = new Set(['4', '5']);
 
 function assertOptions(options) {
   if (options === null || typeof options !== 'object' || Array.isArray(options) || typeof options.kind !== 'string' || typeof options.name !== 'string' || options.name.length === 0) {
@@ -27,6 +28,10 @@ function assertOptions(options) {
   }
   if (options.e2e !== undefined && typeof options.e2e !== 'boolean') {
     throw typedError('INVALID_INPUT', { field: 'e2e' });
+  }
+  const cellsVersion = options.cellsVersion === undefined ? '5' : options.cellsVersion;
+  if (typeof cellsVersion !== 'string' || !CELLS_VERSIONS.has(cellsVersion)) {
+    throw typedError('INVALID_INPUT', { field: 'cellsVersion' });
   }
   if (options.localCli !== undefined) {
     const artifact = options.localCli;
@@ -41,7 +46,7 @@ function assertOptions(options) {
       throw typedError('INVALID_INPUT', { field: 'localCli' });
     }
   }
-  return Object.freeze({ ...options, e2e: options.e2e ?? false });
+  return Object.freeze({ ...options, cellsVersion, e2e: options.e2e ?? false });
 }
 
 function stableJson(value) {
@@ -92,9 +97,19 @@ function componentReadme() {
 }
 
 function structuralFiles(options, capabilities, dependencies) {
-  const declaration = { schema: 1, kind: options.kind, profile: options.profile, name: options.name, capabilities };
+  const declaration = {
+    schema: 1,
+    kind: options.kind,
+    profile: options.profile,
+    name: options.name,
+    cellsVersion: options.cellsVersion,
+    capabilities
+  };
   if (options.namespace !== undefined) {
     declaration.namespace = options.namespace;
+  }
+  if (options.componentBase !== undefined) {
+    declaration.componentBase = options.componentBase;
   }
   let plan = ScaffoldPlan.empty()
     .addDirectory('tools')

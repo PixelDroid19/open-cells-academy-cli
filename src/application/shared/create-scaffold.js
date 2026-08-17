@@ -4,6 +4,8 @@ import { WorkspaceSession, typedError } from '../../domain/workspace-session.js'
 import { composeRecipe } from '../../recipes/compose-recipe.js';
 
 const APP_PROFILES = new Set(['blank', 'web-app', 'web-mobile-app', 'academy-app']);
+const CELLS_VERSIONS = new Set(['4', '5']);
+const COMPONENT_BASES = new Set(['lit1', 'lit3']);
 const SIMPLE_TARBALL = /^[A-Za-z0-9][A-Za-z0-9._-]*\.tgz$/;
 
 function isRecord(value) {
@@ -51,6 +53,36 @@ function assertKnownFields(input, fields) {
   if (!isRecord(input) || Object.keys(input).some(field => !fields.has(field))) {
     throw typedError('INVALID_INPUT', { field: 'scaffold' });
   }
+}
+
+function normalizeCellsVersion(cellsVersion) {
+  if (cellsVersion === undefined) {
+    return '5';
+  }
+  if (typeof cellsVersion !== 'string' || !CELLS_VERSIONS.has(cellsVersion)) {
+    throw typedError('INVALID_INPUT', { field: 'cellsVersion' });
+  }
+  return cellsVersion;
+}
+
+function normalizeComponentBase(componentBase, cellsVersion) {
+  if (componentBase === undefined) {
+    return cellsVersion === '4' ? 'lit3' : undefined;
+  }
+  if (cellsVersion !== '4' || typeof componentBase !== 'string' || !COMPONENT_BASES.has(componentBase)) {
+    throw typedError('INVALID_INPUT', { field: 'componentBase' });
+  }
+  return componentBase;
+}
+
+function applyCreationSchemaDefaults(input, context) {
+  if (context.creationSchemaDefaults === undefined) {
+    return input;
+  }
+  if (!isRecord(context.creationSchemaDefaults)) {
+    throw typedError('INVALID_INPUT', { field: 'scaffold' });
+  }
+  return { ...input, ...context.creationSchemaDefaults };
 }
 
 function normalizeNamespace(namespace) {
@@ -117,7 +149,7 @@ async function suppliedSchema(request, context, kind) {
 }
 
 function normalizeAppSchema(input) {
-  assertKnownFields(input, new Set(['name', 'scaffold', 'e2e', 'installDeps']));
+  assertKnownFields(input, new Set(['name', 'scaffold', 'cellsVersion', 'e2e', 'installDeps']));
   const name = validateProjectName(input.name);
   if (typeof input.scaffold !== 'string' || !APP_PROFILES.has(input.scaffold)) {
     throw typedError('INVALID_INPUT', { field: 'scaffold' });
@@ -126,6 +158,7 @@ function normalizeAppSchema(input) {
     kind: 'app',
     name,
     profile: input.scaffold,
+    cellsVersion: normalizeCellsVersion(input.cellsVersion),
     e2e: input.e2e === undefined ? false : assertBoolean(input.e2e, 'e2e'),
     installDeps: input.installDeps === undefined ? false : assertBoolean(input.installDeps, 'installDeps')
   });
@@ -153,18 +186,25 @@ function resolvedBoolean(input, flags, name) {
 }
 
 function normalizeComponentSchema(input, flags) {
-  assertKnownFields(input, new Set(['name', 'namespace', 'e2e', 'installDeps']));
+  assertKnownFields(input, new Set(['name', 'namespace', 'cellsVersion', 'componentBase', 'e2e', 'installDeps']));
   const name = normalizeComponentName(input.name);
   const namespace = normalizeNamespace(input.namespace);
-  return Object.freeze({
+  const cellsVersion = normalizeCellsVersion(input.cellsVersion);
+  const componentBase = normalizeComponentBase(input.componentBase, cellsVersion);
+  const normalized = {
     kind: 'component',
     name,
     namespace,
     packageName: `${namespace}/${name}`,
     profile: 'component',
+    cellsVersion,
     e2e: resolvedBoolean(input, flags, 'e2e'),
     installDeps: resolvedBoolean(input, flags, 'installDeps')
-  });
+  };
+  if (componentBase !== undefined) {
+    normalized.componentBase = componentBase;
+  }
+  return Object.freeze(normalized);
 }
 
 function assertArtifact(value) {
@@ -191,7 +231,8 @@ async function create(kind, request, context) {
     assertContext(context);
     assertRequest(request);
     const input = await suppliedSchema(request, context, kind);
-    const normalized = kind === 'app' ? normalizeAppSchema(input) : normalizeComponentSchema(input, normalizeFlags(request.flags));
+    const schema = applyCreationSchemaDefaults(input, context);
+    const normalized = kind === 'app' ? normalizeAppSchema(schema) : normalizeComponentSchema(schema, normalizeFlags(request.flags));
     composeRecipe(normalized.profile, normalized);
     const signal = request.signal;
     const handle = await context.workspaceLock.acquire(context.session, `${kind}:create`, signal);

@@ -2,13 +2,8 @@ import { createCommandRegistry } from '../../cli/command-registry.js';
 
 const ALIAS_MAP = Object.freeze(
   new Map([
-    ['lit-component:serve', 'component:dev'],
-    ['lit-components:serve', 'component:dev'],
-    ['lit-component:test', 'component:test'],
-    ['lit-component:documentation', 'component:documentation'],
-    ['lit-component:locales', 'component:locales'],
+    ['lit-components:serve', 'component:serve'],
     ['lit-component:build:demo', 'component:build:demo'],
-    ['lit-component:lint', 'component:lint']
   ])
 );
 
@@ -68,7 +63,7 @@ function buildCatalog() {
 const CATALOG = buildCatalog();
 
 /**
- * Returns the immutable list of all 19 canonical commands with metadata and compatibility aliases.
+ * Returns the immutable list of all 26 canonical commands with metadata and compatibility aliases.
  * @returns {ReadonlyArray<Readonly<object>>}
  */
 export function getCommandCatalog() {

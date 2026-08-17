@@ -34,10 +34,10 @@ function registryFor(dispatch) {
   return createCli({ dispatch, registry: createCommandRegistry() });
 }
 
-test('contract: every one of the 19 commands has exactly one real dispatch target with no NOT_IMPLEMENTED and no fallback', async () => {
+test('contract: every one of the 26 commands has exactly one real dispatch target with no NOT_IMPLEMENTED and no fallback', async () => {
   const registry = createCommandRegistry();
   const names = [...registry.keys()];
-  assert.equal(names.length, 19);
+  assert.equal(names.length, 26);
   const api = createFakeToolApi();
   const { dispatch } = resolveDispatch({ api, cwd: os.tmpdir() });
   for (const name of names) {
@@ -130,6 +130,38 @@ test('contract: app:create and component:create dispatch to real use cases and b
 
   const negatedConflict = await cli.run(['component:create', '--no-e2e', '--scaffold', '{"name":"my-negated-conflict","namespace":"@academy","e2e":true}'], { env: {} });
   assert.notEqual(negatedConflict.exitCode, 0);
+});
+
+test('contract: lit-component:create selects the CLI 4 request contract without bypassing creation safety', async t => {
+  const root = await workspace(t);
+  const api = createFakeToolApi();
+  const { dispatch } = resolveDispatch({ api, cwd: root });
+  const cli = registryFor(dispatch);
+
+  const selected = await cli.run(
+    ['lit-component:create', '--e2e', '--scaffold', '{"name":"legacy-card","namespace":"@academy","componentBase":"lit1"}'],
+    { env: {} }
+  );
+  assert.equal(selected.exitCode, 0, selected.stderr);
+  const declaration = JSON.parse(await readFile(path.join(root, 'legacy-card', '.open-cells-academy-recipe.json'), 'utf8'));
+  assert.equal(declaration.cellsVersion, '4');
+  assert.equal(declaration.componentBase, 'lit1');
+  assert.equal(declaration.capabilities.at(-1), 'e2e-playwright');
+
+  const defaultBase = await cli.run(
+    ['lit-component:create', '--scaffold', '{"name":"legacy-panel","namespace":"@academy"}'],
+    { env: {} }
+  );
+  assert.equal(defaultBase.exitCode, 0, defaultBase.stderr);
+  const defaultDeclaration = JSON.parse(await readFile(path.join(root, 'legacy-panel', '.open-cells-academy-recipe.json'), 'utf8'));
+  assert.equal(defaultDeclaration.cellsVersion, '4');
+  assert.equal(defaultDeclaration.componentBase, 'lit3');
+
+  const duplicate = await cli.run(
+    ['lit-component:create', '--scaffold', '{"name":"legacy-card","namespace":"@academy"}'],
+    { env: {} }
+  );
+  assert.notEqual(duplicate.exitCode, 0);
 });
 
 test('contract: app:create follows the README relative scaffold path from an empty directory', async t => {
@@ -566,7 +598,7 @@ test('contract: dev/build/preview/component:dev/component:build:demo dispatch to
   assert.equal(api.viteBuildCalls, 2);
 });
 
-test('contract: legacy lit-component:serve dispatches to component dev for real package scripts', async t => {
+test('contract: component:serve and lit-component:serve dispatch to the component dev adapter', async t => {
   const root = await workspace(t);
   await mkdir(path.join(root, 'demo'), { recursive: true });
   await writeFile(path.join(root, 'demo', 'index.html'), '<html><body>legacy demo</body></html>\n');
@@ -574,10 +606,41 @@ test('contract: legacy lit-component:serve dispatches to component dev for real 
   const { dispatch } = resolveDispatch({ api, cwd: root });
   const cli = registryFor(dispatch);
 
-  const result = await cli.run(['lit-component:serve', '--host', '127.0.0.1', '--port', '41099', '--no-open'], { env: {} });
+  const componentServe = await cli.run(['component:serve', '--host', '127.0.0.1', '--port', '41098', '--no-open'], { env: {} });
+  const litServe = await cli.run(['lit-component:serve', '--host', '127.0.0.1', '--port', '41099', '--no-open'], { env: {} });
 
-  assert.equal(result.exitCode, 0, `stderr: ${result.stderr}`);
-  assert.equal(api.viteDevCalls, 1);
+  assert.equal(componentServe.exitCode, 0, `stderr: ${componentServe.stderr}`);
+  assert.equal(litServe.exitCode, 0, `stderr: ${litServe.stderr}`);
+  assert.equal(api.viteDevCalls, 2);
+});
+
+test('contract: lit-component test, lint, locales, and documentation commands reuse their component handlers', async t => {
+  const root = await workspace(t);
+  await mkdir(path.join(root, 'src'), { recursive: true });
+  await mkdir(path.join(root, 'test'), { recursive: true });
+  await mkdir(path.join(root, 'locales'), { recursive: true });
+  await writeFile(path.join(root, 'src', 'academy-card.js'), 'export class AcademyCard {}\n');
+  await writeFile(path.join(root, 'test', 'academy-card.test.js'), 'it("passes", () => {});\n');
+  await writeFile(path.join(root, 'locales', 'locales.json'), '{"en":{"title":"Card"}}\n');
+  const api = createFakeToolApi({ testing: { exitCode: 0 } });
+  const { dispatch } = resolveDispatch({ api, cwd: root });
+  const cli = registryFor(dispatch);
+
+  const testing = await cli.run(['lit-component:test'], { env: {} });
+  const lint = await cli.run(['lit-component:lint'], { env: {} });
+  const locales = await cli.run(['lit-component:locales'], { env: {} });
+  const documentation = await cli.run(['lit-component:documentation', '--noMd'], { env: {} });
+
+  for (const result of [testing, lint, locales, documentation]) {
+    assert.equal(result.exitCode, 0, result.stderr);
+  }
+  assert.equal(api.testingRuns, 1);
+  assert.equal(api.eslintRuns, 1);
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(root, 'demo', 'locales', 'locales.json'), 'utf8')),
+    { en: { title: 'Card' } }
+  );
+  assert.equal(JSON.parse(await readFile(path.join(root, 'custom-elements.json'), 'utf8')).schemaVersion, '1.0.0');
 });
 
 test('contract: every command reports a typed, sanitized error in both languages and never returns exit 0 on failure', async () => {

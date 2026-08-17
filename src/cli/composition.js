@@ -484,7 +484,7 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
   });
 
   async function sessionFor(parsed) {
-    if (parsed.command.name === 'app:create' || parsed.command.name === 'component:create') {
+    if (parsed.command.name === 'app:create' || parsed.command.name === 'component:create' || parsed.command.name === 'lit-component:create') {
       return resolveSession(cwd, filesystem, WorkspaceSession.openDirectory);
     }
     if (parsed.command.requiresWorkspace !== true) {
@@ -750,8 +750,11 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
     });
     const useCase = component ? createComponent : createApp;
     const scaffold = optionOf(parsed, 'scaffold');
+    const creationSchemaDefaults = parsed.command.name === 'lit-component:create'
+      ? Object.freeze({ cellsVersion: '4' })
+      : undefined;
     const request = Object.freeze({ scaffold, flags: suppliedCreateFlags(parsed, component) });
-    const outcome = await useCase(request, context);
+    const outcome = await useCase(request, Object.freeze({ ...context, creationSchemaDefaults }));
     if (!outcome.ok) {
       return outcome;
     }
@@ -795,6 +798,8 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
           return await handleCreate(parsed, false, activeSession);
         case 'component:create':
           return await handleCreate(parsed, true, activeSession);
+        case 'lit-component:create':
+          return await handleCreate(parsed, true, activeSession);
         case 'app:install':
           return await handleInstall(parsed, activeSession, false);
         case 'component:install':
@@ -807,17 +812,26 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
           return await handleLint(tools, parsed, activeSession, false);
         case 'component:lint':
           return await handleLint(tools, parsed, activeSession, true);
+        case 'lit-component:lint':
+          return await handleLint(tools, parsed, activeSession, true);
         case 'app:test':
           return await handleTest(tools, parsed, activeSession, false);
         case 'component:test':
+          return await handleTest(tools, parsed, activeSession, true);
+        case 'lit-component:test':
           return await handleTest(tools, parsed, activeSession, true);
         case 'app:locales':
           return await handleLocales(parsed, activeSession, false);
         case 'component:locales':
           return await handleLocales(parsed, activeSession, true);
+        case 'lit-component:locales':
+          return await handleLocales(parsed, activeSession, true);
         case 'app:dev':
           return await handleDev(tools, parsed, activeSession, false);
         case 'component:dev':
+          return await handleDev(tools, parsed, activeSession, true);
+        case 'component:serve':
+        case 'lit-component:serve':
           return await handleDev(tools, parsed, activeSession, true);
         case 'app:preview':
           return await handlePreview(tools, parsed, activeSession);
@@ -826,6 +840,8 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
         case 'component:build:demo':
           return await handleBuildDemo(tools, parsed, activeSession);
         case 'component:documentation':
+          return await handleDocumentation(tools, parsed, activeSession);
+        case 'lit-component:documentation':
           return await handleDocumentation(tools, parsed, activeSession);
         case 'component:sass':
           return await handleSass(tools, parsed, activeSession);
