@@ -1,6 +1,7 @@
 import { ScaffoldPlan } from '../../domain/scaffold-plan.js';
 import { typedError } from '../../domain/workspace-session.js';
 import { applicationProfilePayloads } from '../../../templates/apps/profile-payloads.js';
+import { createBridge4ApplicationPayload } from './bridge4-app-payload.js';
 
 function stableJson(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
@@ -1004,7 +1005,11 @@ ${payload.routes.at(-2)?.name !== first.name ? `  await expectActiveRouteFocus(p
 `);
 }
 
-export function createApplicationPayload(profile, { e2e = false, name = profile } = {}) {
+export function createApplicationPayload(profile, options = {}) {
+  if (options?.cellsVersion === '5' && options.cellsVersionExplicit !== false) {
+    return createBridge4ApplicationPayload(profile, options);
+  }
+  const { e2e = false, name = profile } = options;
   const payload = applicationProfilePayloads[profile];
   if (payload === undefined || typeof e2e !== 'boolean') {
     throw typedError('INVALID_INPUT', { field: 'profile' });

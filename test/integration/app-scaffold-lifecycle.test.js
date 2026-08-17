@@ -17,6 +17,7 @@ const PROFILES = Object.freeze({
   'web-mobile-app': Object.freeze({ routes: ['login', 'dashboard', 'movements', 'settings', 'help'], marker: 'academy-mobile-app' }),
   'academy-app': Object.freeze({ routes: ['welcome', 'routing', 'pubsub', 'data', 'local-api', 'i18n', 'scoped'], marker: 'academy-learning-app' })
 });
+const LEGACY_CELLS_VERSION = '4';
 
 function fileMap(plan) {
   return new Map(plan.files.map(file => [file.path, file.content]));
@@ -28,7 +29,7 @@ async function importViteConfigFromLiteralSpacePath(t) {
     await rm(root, { recursive: true, force: true });
   });
   const project = path.join(root, 'generated app');
-  const files = fileMap(composeRecipe('blank', { kind: 'app', name: 'space-app' }));
+  const files = fileMap(composeRecipe('blank', { kind: 'app', name: 'space-app', cellsVersion: LEGACY_CELLS_VERSION }));
   await mkdir(path.join(project, 'test'), { recursive: true });
   await Promise.all([
     writeFile(path.join(project, 'vite.config.js'), files.get('vite.config.js')),
@@ -43,7 +44,7 @@ test('red: every application profile composes a complete runnable and distinct A
   const fingerprints = new Set();
 
   for (const [profile, expected] of Object.entries(PROFILES)) {
-    const plan = composeRecipe(profile, { kind: 'app', name: `${profile}-fixture` });
+    const plan = composeRecipe(profile, { kind: 'app', name: `${profile}-fixture`, cellsVersion: LEGACY_CELLS_VERSION });
     const files = fileMap(plan);
     for (const required of [
       'index.html',
@@ -109,7 +110,7 @@ test('red: generated application dev and production configs load through the tru
   const owner = await WorkspaceSession.open(root, filesystem);
 
   for (const profile of Object.keys(PROFILES)) {
-    const publication = await filesystem.applyPlanAtomically(owner, composeRecipe(profile, { kind: 'app', name: `${profile}-config` }), profile);
+    const publication = await filesystem.applyPlanAtomically(owner, composeRecipe(profile, { kind: 'app', name: `${profile}-config`, cellsVersion: LEGACY_CELLS_VERSION }), profile);
     const session = await WorkspaceSession.open(publication.destination, filesystem);
     const [dev, prod] = await Promise.all([loadCellsConfig(session, 'dev.js'), loadCellsConfig(session, 'prod.js')]);
 
@@ -129,7 +130,7 @@ test('red: generated application dev and production configs load through the tru
 
 test('red: every application profile keeps real scoped-registry production imports behind a Happy DOM-only test shim', () => {
   for (const profile of Object.keys(PROFILES)) {
-    const files = fileMap(composeRecipe(profile, { kind: 'app', name: profile + '-scoped-fixture' }));
+    const files = fileMap(composeRecipe(profile, { kind: 'app', name: profile + '-scoped-fixture', cellsVersion: LEGACY_CELLS_VERSION }));
     const app = files.get('src/app.js');
     const config = files.get('vite.config.js');
 
@@ -162,8 +163,8 @@ test('red: generated Vite aliases import and access local files from a literal-s
 
 test('red: E2E files and Playwright dependency appear only when explicitly requested', () => {
   for (const profile of Object.keys(PROFILES)) {
-    const withoutE2e = composeRecipe(profile, { kind: 'app', name: `${profile}-plain`, e2e: false });
-    const withE2e = composeRecipe(profile, { kind: 'app', name: `${profile}-e2e`, e2e: true });
+    const withoutE2e = composeRecipe(profile, { kind: 'app', name: `${profile}-plain`, cellsVersion: LEGACY_CELLS_VERSION, e2e: false });
+    const withE2e = composeRecipe(profile, { kind: 'app', name: `${profile}-e2e`, cellsVersion: LEGACY_CELLS_VERSION, e2e: true });
     const plainFiles = fileMap(withoutE2e);
     const e2eFiles = fileMap(withE2e);
     const plainMetadata = JSON.parse(plainFiles.get('package.json'));

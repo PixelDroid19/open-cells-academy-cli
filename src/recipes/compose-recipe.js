@@ -46,7 +46,7 @@ function assertOptions(options) {
       throw typedError('INVALID_INPUT', { field: 'localCli' });
     }
   }
-  return Object.freeze({ ...options, cellsVersion, e2e: options.e2e ?? false });
+  return Object.freeze({ ...options, cellsVersion, cellsVersionExplicit: options.cellsVersion !== undefined, e2e: options.e2e ?? false });
 }
 
 function stableJson(value) {
@@ -64,6 +64,7 @@ function packageMetadata(options, dependencies) {
     metadata[field] = Object.fromEntries(Object.entries(buckets[field]).sort(([left], [right]) => left.localeCompare(right)));
   }
   if (options.kind === 'app') {
+    const bridge4 = options.cellsVersion === '5' && options.cellsVersionExplicit !== false;
     metadata.scripts = {
       'academy:version': 'cells --version',
       build: 'vite build',
@@ -72,7 +73,7 @@ function packageMetadata(options, dependencies) {
       locales: 'node scripts/validate-locales.js',
       preview: 'vite preview',
       test: 'vitest run',
-      'test:a11y': 'vitest run test/app-accessibility.test.js'
+      'test:a11y': bridge4 ? 'vitest run test/unit' : 'vitest run test/app-accessibility.test.js'
     };
     if (options.e2e) metadata.scripts.e2e = 'playwright test';
   }
@@ -111,12 +112,15 @@ function structuralFiles(options, capabilities, dependencies) {
   if (options.componentBase !== undefined) {
     declaration.componentBase = options.componentBase;
   }
+  const bridge4Application = options.kind === 'app' && options.cellsVersion === '5' && options.cellsVersionExplicit !== false;
   let plan = ScaffoldPlan.empty()
     .addDirectory('tools')
     .addFile('.open-cells-academy-recipe.json', stableJson(declaration))
-    .addFile('package.json', stableJson(packageMetadata(options, dependencies)))
-    .addFile('README.md', options.kind === 'component' ? componentReadme() : applicationReadme());
-  if (options.kind === 'app') {
+    .addFile('package.json', stableJson(packageMetadata(options, dependencies)));
+  if (!bridge4Application) {
+    plan = plan.addFile('README.md', options.kind === 'component' ? componentReadme() : applicationReadme());
+  }
+  if (options.kind === 'app' && !bridge4Application) {
     plan = plan
       .addFile('scripts/validate-source.js', `import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';

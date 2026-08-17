@@ -56,6 +56,32 @@ const DEFINITIONS = Object.freeze({
   'component-cem-docs': Object.freeze({ dependencies: [['@custom-elements-manifest/analyzer', '^0.10.0', 'dev']] })
 });
 
+const EMPTY_BRIDGE4_APPLICATION_CAPABILITY = Object.freeze({ dependencies: [] });
+const BRIDGE4_APPLICATION_DEFINITIONS = Object.freeze({
+  'lit-runtime': DEFINITIONS['lit-runtime'],
+  'cells-config': Object.freeze({
+    dependencies: [
+      ['@cells/cells-bridge', '^4.0.0', 'runtime'],
+      ['@cells/cells-page-mixin', '^2.0.0', 'runtime'],
+      ['vite', '7.3.6', 'dev']
+    ]
+  }),
+  routing: EMPTY_BRIDGE4_APPLICATION_CAPABILITY,
+  'cells-bridge-compat': EMPTY_BRIDGE4_APPLICATION_CAPABILITY,
+  pubsub: EMPTY_BRIDGE4_APPLICATION_CAPABILITY,
+  'data-manager': EMPTY_BRIDGE4_APPLICATION_CAPABILITY,
+  i18n: EMPTY_BRIDGE4_APPLICATION_CAPABILITY,
+  'scoped-elements': EMPTY_BRIDGE4_APPLICATION_CAPABILITY,
+  'sass-theme': DEFINITIONS['sass-theme'],
+  'unit-browser-tests': DEFINITIONS['unit-browser-tests'],
+  'accessibility-tests': DEFINITIONS['accessibility-tests'],
+  'e2e-playwright': DEFINITIONS['e2e-playwright'],
+  'service-worker': EMPTY_BRIDGE4_APPLICATION_CAPABILITY,
+  'local-api-fixtures': EMPTY_BRIDGE4_APPLICATION_CAPABILITY,
+  'component-demo': EMPTY_BRIDGE4_APPLICATION_CAPABILITY,
+  'component-cem-docs': EMPTY_BRIDGE4_APPLICATION_CAPABILITY
+});
+
 export const capabilityIdentifiers = Object.freeze(Object.keys(DEFINITIONS));
 
 function assertIdentifier(identifier) {
@@ -73,6 +99,10 @@ function assertOverrides(overrides) {
   }
 }
 
+function isBridge4Application(options) {
+  return options?.kind === 'app' && options.cellsVersion === '5' && options.cellsVersionExplicit !== false;
+}
+
 /**
  * Returns a declarative contribution only. Runtime/template payloads belong to
  * later tasks, so this descriptor deliberately has no host side effects.
@@ -84,7 +114,9 @@ export function createCapability(identifier, options = {}) {
   if (override !== undefined && (override === null || typeof override !== 'object' || Array.isArray(override))) {
     throw typedError('INVALID_INPUT', { field: 'capabilityOverrides' });
   }
-  const definition = DEFINITIONS[identifier];
+  const definition = isBridge4Application(options)
+    ? BRIDGE4_APPLICATION_DEFINITIONS[identifier]
+    : DEFINITIONS[identifier];
   let plan = ScaffoldPlan.empty();
   for (const [name, version, kind] of definition.dependencies) {
     plan = plan.addDependency(name, override?.[name] ?? version, kind);
