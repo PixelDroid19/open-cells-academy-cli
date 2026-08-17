@@ -98,9 +98,14 @@ test('contract: app:create and component:create dispatch to real use cases and b
   assert.equal(componentManifest.devDependencies['@playwright/test'], '^1.50.0');
   assert.equal(componentManifest.devDependencies['@axe-core/playwright'], '^4.10.0');
   for (const required of [
+    'index.html',
     'my-button.js',
+    'custom-elements.json',
     'src/MyButton.js',
-    'src/my-button.styles.js',
+    'src/my-button.scss',
+    'src/my-button.css.js',
+    'demo/basic.html',
+    'demo/demo-build.js',
     'demo/index.html',
     'demo/demo.js',
     'test/unit/my-button.test.js',
@@ -550,6 +555,30 @@ test('contract: app:test detects a declared WTR project while explicit --no-wtr 
 
   assert.equal(requests[0].args.includes('--config'), true);
   assert.equal(requests[1].args[0], 'run');
+});
+
+test('contract: component:test --wtr dispatches through the component compatibility runner', async t => {
+  const root = await workspace(t);
+  await mkdir(path.join(root, 'test', 'unit'), { recursive: true });
+  await writeFile(path.join(root, 'test', 'unit', 'a.test.js'), 'it("passes", () => {});\n');
+  await mkdir(path.join(root, 'node_modules', '@web', 'test-runner-playwright'), { recursive: true });
+  await writeFile(path.join(root, 'node_modules', '@web', 'test-runner-playwright', 'package.json'), '{"name":"@web/test-runner-playwright","version":"0.0.0","type":"module","main":"index.mjs"}\n');
+  await writeFile(path.join(root, 'node_modules', '@web', 'test-runner-playwright', 'index.mjs'), 'export function playwrightLauncher() {}\n');
+  const api = createFakeToolApi({ testing: { exitCode: 0 } });
+  const requests = [];
+  const runProcess = api.testing.runProcess.bind(api.testing);
+  api.testing.runProcess = async request => {
+    requests.push(request);
+    return runProcess(request);
+  };
+  const { dispatch } = resolveDispatch({ api, cwd: root });
+  const cli = registryFor(dispatch);
+
+  const result = await cli.run(['component:test', '--wtr'], { env: {} });
+
+  assert.equal(result.exitCode, 0, result.stderr);
+  assert.equal(api.testingRuns, 1);
+  assert.equal(requests[0].args.includes('--config'), true);
 });
 
 test('contract: component:test --updateLocales regenerates locale artifacts before testing', async t => {

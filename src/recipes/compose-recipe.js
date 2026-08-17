@@ -86,11 +86,19 @@ function packageMetadata(options, dependencies) {
     if (options.e2e) metadata.scripts.e2e = 'playwright test';
   }
   if (options.kind === 'component') {
+    metadata.exports = {
+      '.': './index.js',
+      [`./${options.name}.js`]: `./${options.name}.js`
+    };
     metadata.scripts = {
-      build: 'vite build',
-      dev: 'vite',
-      test: 'vitest run test/unit',
-      'test:a11y': `vitest run test/unit/${options.name}-accessibility.test.js`
+      build: 'cells component:build:demo',
+      dev: 'cells component:dev',
+      documentation: 'cells component:documentation',
+      lint: 'cells component:lint',
+      locales: 'cells component:locales',
+      sass: 'cells component:sass',
+      test: 'cells component:test',
+      'test:coverage': 'cells component:test --coverage'
     };
     if (options.e2e) metadata.scripts.e2e = 'playwright test';
   }
@@ -102,7 +110,7 @@ function applicationReadme() {
 }
 
 function componentReadme() {
-  return '# Cells Academy component\n\nThis generated component teaches independent Cells-style composition with `WidgetMixin(ScopedElementsMixin(LitElement))`. Its public host registers the Academy UI constructors in `static get scopedElements()`, keeping `academy-type-text` and `academy-button-default` out of the global custom-elements registry.\n\nComponent-owned labels use `this.t(...)`. Its public continuation action calls `this.emitEvent(\'continue\', { component: \'<component-name>\' })`, which emits the prefixed `<component-name>-continue` event with bubbling, composed, and cancelable defaults.\n\nThe identical EN/ES catalogs live at `locales/locales.json`, `demo/locales/locales.json`, and `test/unit/locales/locales.json`. The demo installs IntlMsg before loading the component and lets users switch English and Spanish.\n\nUse `cells component:test` for generated unit and accessibility tests, `cells component:test --coverage` for the 100% component-source coverage gate, `cells component:build:demo` to build the demo, and `cells component:dev` to serve it.\n';
+  return '# Cells Academy component\n\nThis generated component teaches independent Cells-style composition with `WidgetMixin(ScopedElementsMixin(LitElement))`. `WidgetMixin` and the neutral Academy UI constructors are teaching adapters, not native Bridge or design-system APIs. The public host registers the Academy UI constructors in `static get scopedElements()`, keeping `academy-type-text` and `academy-button-default` out of the global custom-elements registry.\n\nThe package exports the class from `index.js` without global registration. `<component-name>.js` is the opt-in tag entry point and registers the host once. Component-owned labels use `this.t(...)`. Its public continuation action calls `this.emitEvent(\'continue\', { component: \'<component-name>\' })`, which emits the prefixed `<component-name>-continue` event with bubbling, composed, and cancelable defaults.\n\nThe SCSS source and aligned `.css.js` runtime style module live in `src/`. The identical EN/ES catalogs live at `locales/locales.json`, `demo/locales/locales.json`, and `test/unit/locales/locales.json`. The demo installs IntlMsg before loading the component and lets users switch English and Spanish. `custom-elements.json` documents the initial public API; `cells component:documentation` regenerates it and `README.md` from source.\n\nThe public Open Cells minimum is 80 percent for statements, branches, functions, and lines. This small teaching component intentionally enforces a stricter 100 percent source-only coverage gate. Use `cells component:test`, `cells component:test --coverage`, and `cells component:test --wtr` for test flows, `cells component:locales` to refresh demo and test catalogs, `cells component:documentation` to refresh docs, `cells component:build:demo` to build the demo, and `cells component:dev` to serve it.\n';
 }
 
 function structuralFiles(options, capabilities, dependencies) {

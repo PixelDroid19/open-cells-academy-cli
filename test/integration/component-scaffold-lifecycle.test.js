@@ -73,7 +73,7 @@ function replaceGlobal(t, name, value) {
   });
 }
 
-test('component entrypoint loads the scoped-registry polyfill before defining its host', async t => {
+test('component package separates the class export from its registering entrypoint', async t => {
   const files = fileMap(composeRecipe('component', {
     kind: 'component',
     name: 'academy-card',
@@ -92,6 +92,11 @@ test('component entrypoint loads the scoped-registry polyfill before defining it
       trace.push(`define:${name}`);
     }
   });
+
+  await import(`${pathToFileURL(path.join(root, 'index.js')).href}?class-entrypoint`);
+
+  assert.deepEqual(trace, []);
+  assert.equal(registered.size, 0);
 
   await import(`${pathToFileURL(path.join(root, 'academy-card.js')).href}?entrypoint`);
 
@@ -129,14 +134,35 @@ test('component Vitest keeps the real scoped-registry import behind a Happy DOM-
   assert.match(files.get('test/unit/scoped-registry-polyfill.js'), /Happy DOM/);
 });
 
+test('component generated tests use the shared TDD surface for Vitest and WTR', () => {
+  const files = fileMap(composeRecipe('component', {
+    kind: 'component',
+    name: 'academy-card',
+    namespace: '@academy'
+  }));
+
+  for (const testPath of ['test/unit/academy-card.test.js', 'test/unit/academy-card-accessibility.test.js']) {
+    const source = files.get(testPath);
+
+    assert.match(source, /suite\(/);
+    assert.match(source, /test\(/);
+    assert.match(source, /globalThis\.beforeEach \?\? globalThis\.setup/);
+    assert.match(source, /globalThis\.afterEach \?\? globalThis\.teardown/);
+    assert.match(source, /from '\.\/locales\/locales\.json' with \{ type: 'json' \};/);
+    assert.doesNotMatch(source, /from ['"]vitest['"]/);
+  }
+  assert.match(files.get('vite.config.js'), /globals: true/);
+});
+
 test('component recipe publishes component-only guidance and a source-specific coverage policy', () => {
   const component = fileMap(composeRecipe('component', {
     kind: 'component',
     name: 'academy-card',
     namespace: '@academy'
   }));
-  const app = fileMap(composeRecipe('blank', { kind: 'app', name: 'academy-app', cellsVersion: '4' }));
+  const app = fileMap(composeRecipe('blank', { kind: 'app', name: 'academy-app', cellsVersion: '5' }));
   const manifest = metadata(component);
+  const appManifest = metadata(app);
   const readme = component.get('README.md');
   const config = component.get('vite.config.js');
 
@@ -148,8 +174,11 @@ test('component recipe publishes component-only guidance and a source-specific c
   assert.match(readme, /demo\/locales\/locales\.json/);
   assert.match(readme, /test\/unit\/locales\/locales\.json/);
   assert.match(readme, /cells component:test --coverage/);
+  assert.match(readme, /80 percent/);
+  assert.match(readme, /100 percent/);
+  assert.match(readme, /cells component:documentation/);
   assert.doesNotMatch(readme, /@open-cells\/core|Academy channels|browser facade/i);
-  assert.match(app.get('README.md'), /@open-cells\/core@1\.2\.1/);
+  assert.equal(appManifest.dependencies['@open-cells/core'], '1.2.1');
   assert.equal(manifest.devDependencies['@vitest/coverage-v8'], '3.2.4');
   assert.match(config, /coverage: \{/);
   assert.match(config, /provider: 'v8'/);
@@ -161,6 +190,57 @@ test('component recipe publishes component-only guidance and a source-specific c
   assert.match(config, /branches: 100/);
   assert.match(config, /functions: 100/);
   assert.match(config, /lines: 100/);
+});
+
+test('component recipe publishes the complete modern component package tree', () => {
+  const files = fileMap(composeRecipe('component', {
+    kind: 'component',
+    name: 'academy-card',
+    namespace: '@academy',
+    cellsVersion: '5'
+  }));
+  const manifest = metadata(files);
+
+  for (const required of [
+    'index.html',
+    'index.js',
+    'academy-card.js',
+    'custom-elements.json',
+    'src/AcademyCard.js',
+    'src/academy-card.scss',
+    'src/academy-card.css.js',
+    'demo/index.html',
+    'demo/basic.html',
+    'demo/demo.js',
+    'demo/demo-build.js',
+    'demo/locales/locales.json',
+    'locales/locales.json',
+    'test/unit/locales/locales.json'
+  ]) {
+    assert.equal(files.has(required), true, `${required} is missing`);
+  }
+
+  assert.deepEqual(manifest.exports, {
+    '.': './index.js',
+    './academy-card.js': './academy-card.js'
+  });
+  assert.equal(manifest.scripts.dev, 'cells component:dev');
+  assert.equal(manifest.scripts.build, 'cells component:build:demo');
+  assert.equal(manifest.scripts.test, 'cells component:test');
+  assert.equal(manifest.scripts['test:coverage'], 'cells component:test --coverage');
+  assert.equal(manifest.scripts.locales, 'cells component:locales');
+  assert.equal(manifest.scripts.documentation, 'cells component:documentation');
+
+  assert.match(files.get('index.js'), /^export \{ AcademyCard \} from '\.\/src\/AcademyCard\.js';/);
+  assert.doesNotMatch(files.get('index.js'), /customElements|academy-card\.js/);
+  assert.match(files.get('academy-card.js'), /customElements\.define\('academy-card', AcademyCard\)/);
+  assert.match(files.get('src/AcademyCard.js'), /import componentStyles from '\.\/academy-card\.css\.js';/);
+  assert.match(files.get('src/AcademyCard.js'), /@fires academy-card-continue - Emitted when the learner activates the continuation control\./);
+  assert.match(files.get('src/academy-card.scss'), /:host/);
+  assert.match(files.get('src/academy-card.css.js'), /export default css`/);
+  assert.match(files.get('demo/basic.html'), /src="\.\/demo\.js"/);
+  assert.match(files.get('demo/demo-build.js'), /import '\.\/demo\.js';/);
+  assert.equal(JSON.parse(files.get('custom-elements.json')).schemaVersion, '1.0.0');
 });
 
 test('component demo publishes the selected document language and E2E asserts Spanish document state', () => {
@@ -192,8 +272,13 @@ test('component recipe generates an independent scoped educational component wit
   for (const required of [
     'academy-card.js',
     'index.js',
+    'index.html',
+    'custom-elements.json',
     'src/AcademyCard.js',
-    'src/academy-card.styles.js',
+    'src/academy-card.scss',
+    'src/academy-card.css.js',
+    'demo/basic.html',
+    'demo/demo-build.js',
     'demo/index.html',
     'demo/demo.js',
     'demo/locales/locales.json',
@@ -208,10 +293,12 @@ test('component recipe generates an independent scoped educational component wit
   }
 
   assert.equal(manifest.name, 'academy-card');
-  assert.equal(manifest.scripts.dev, 'vite');
-  assert.equal(manifest.scripts.build, 'vite build');
-  assert.equal(manifest.scripts.test, 'vitest run test/unit');
-  assert.equal(manifest.scripts['test:a11y'], 'vitest run test/unit/academy-card-accessibility.test.js');
+  assert.equal(manifest.scripts.dev, 'cells component:dev');
+  assert.equal(manifest.scripts.build, 'cells component:build:demo');
+  assert.equal(manifest.scripts.test, 'cells component:test');
+  assert.equal(manifest.scripts['test:coverage'], 'cells component:test --coverage');
+  assert.equal(manifest.scripts.locales, 'cells component:locales');
+  assert.equal(manifest.scripts.documentation, 'cells component:documentation');
   assert.equal(manifest.scripts.e2e, undefined);
   assert.equal(manifest.dependencies.lit, '3.3.3');
   assert.equal(manifest.dependencies['@open-wc/scoped-elements'], '3.0.10');
@@ -297,7 +384,7 @@ test('component E2E is conditional and exercises localized component events', ()
   assert.equal(e2eMetadata.scripts.e2e, 'playwright test');
   assert.equal(e2eMetadata.devDependencies['@playwright/test'], '^1.50.0');
   assert.equal(e2eMetadata.devDependencies['@axe-core/playwright'], '^4.10.0');
-  assert.match(e2e.get('playwright.config.js'), /npm run dev -- --host 127\.0\.0\.1 --port 4173 --strictPort/);
+  assert.match(e2e.get('playwright.config.js'), /cells component:dev --host 127\.0\.0\.1 --port 4173 --strictPort --no-open/);
   assert.match(e2e.get('e2e/academy-card.spec.js'), /page\.goto\('\/'\)/);
   assert.match(e2e.get('e2e/academy-card.spec.js'), /academy-card-continue/);
   assert.match(e2e.get('e2e/academy-card.spec.js'), /Spanish/);
