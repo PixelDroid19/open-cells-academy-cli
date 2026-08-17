@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -11,15 +11,22 @@ const execFileAsync = promisify(execFile);
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const PACKAGE_NAME = 'open-cells-academy-cli';
 
-function publicEnvironment(root) {
+async function publicEnvironment(root) {
+  const bin = path.join(root, 'bin');
+  const npmCli = path.join(path.dirname(path.dirname(process.execPath)), 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  await access(npmCli);
+  await mkdir(bin, { recursive: true });
+  await symlink(process.execPath, path.join(bin, 'node'));
+  await writeFile(path.join(bin, 'npm'), `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(npmCli)} "$@"\n`, { mode: 0o755 });
   return {
-    PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin',
+    PATH: bin,
     HOME: path.join(root, 'home'),
     USERPROFILE: path.join(root, 'home'),
     NPM_CONFIG_USERCONFIG: '/dev/null',
     NPM_CONFIG_REGISTRY: 'https://registry.npmjs.org/',
     NPM_CONFIG_CACHE: path.join(root, 'cache'),
     NPM_CONFIG_IGNORE_SCRIPTS: 'true',
+    NPM_CONFIG_SCRIPT_SHELL: '/bin/sh',
     NPM_CONFIG_AUDIT: 'false',
     NPM_CONFIG_FUND: 'false',
     NPM_CONFIG_UPDATE_NOTIFIER: 'false'
@@ -56,7 +63,7 @@ test('public tarball runs through npm exec and creates app and component project
   t.after(async () => {
     await rm(root, { recursive: true, force: true });
   });
-  const env = publicEnvironment(root);
+  const env = await publicEnvironment(root);
   const tarball = await packageTarball(root, env);
   const workspace = path.join(root, 'workspace');
   await access(tarball);
@@ -80,16 +87,17 @@ test('public tarball runs through npm exec and creates app and component project
     await access(path.join(workspace, project, 'tools', 'open-cells-academy-cli-0.1.0.tgz'));
   }
 
-  await access(path.join(workspace, 'npx-academy-app', 'src', 'main.js'));
+  await access(path.join(workspace, 'npx-academy-app', 'app', 'scripts', 'app.js'));
   await access(path.join(workspace, 'academy-learning-card', 'src', 'AcademyLearningCard.js'));
 });
 
-test('public tarball creates, installs, and runs every advertised CLI 4 compatibility script through the public registry', { timeout: 300_000 }, async t => {
+test('public tarball creates and runs non-browser CLI 4 compatibility scripts through a Chrome-free public registry environment', { timeout: 300_000 }, async t => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'open-cells-bridge3-public-install-'));
   t.after(async () => {
     await rm(root, { recursive: true, force: true });
   });
-  const env = publicEnvironment(root);
+  const env = await publicEnvironment(root);
+  assert.deepEqual((await readdir(path.join(root, 'bin'))).sort(), ['node', 'npm']);
   const tarball = await packageTarball(root, env);
   const workspace = path.join(root, 'workspace');
   await mkdir(workspace, { recursive: true });
@@ -117,7 +125,7 @@ test('public tarball creates, installs, and runs every advertised CLI 4 compatib
   assert.equal(resolved.every(value => value.startsWith('https://registry.npmjs.org/') || value === 'file:tools/open-cells-academy-cli-0.1.0.tgz'), true);
 
   const scriptEnvironment = { ...env, NPM_CONFIG_IGNORE_SCRIPTS: 'false' };
-  for (const script of ['academy:version', 'test', 'locales', 'e2e']) {
+  for (const script of ['academy:version', 'test', 'locales']) {
     const result = await npm(['run', script], { cwd: project, env: scriptEnvironment });
     assert.doesNotMatch(result.stderr, /npm error|ERR!/i, `${script} failed: ${result.stderr}`);
   }

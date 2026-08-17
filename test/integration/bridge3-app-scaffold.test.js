@@ -147,4 +147,7 @@ test('contract: CLI 4 E2E material is a public, executable overlay', () => {
   assert.equal((config.match(/\bcommand:/gu) ?? []).length, 1);
   assert.match(config, /cells app:serve -c dev\.js/u);
   assert.match(config, /channel: 'chrome'/u);
+  assert.match(overlay.get('README.md'), /npx playwright install chrome/u);
+  assert.match(overlay.get('README.md'), /npm run e2e/u);
+  assert.match(overlay.get('README.md'), /does not download a browser/u);
 });

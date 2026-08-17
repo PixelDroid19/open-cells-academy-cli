@@ -160,6 +160,8 @@ const TEST_TOOL_SPECS = Object.freeze({
   wtr: Object.freeze({ package: '@web/test-runner', bin: 'web-test-runner' })
 });
 
+const BRIDGE3_APP_PROFILES = new Set(['blank', 'web-app', 'web-mobile-app', 'academy-app']);
+
 function binEntryFrom(manifest, binName) {
   if (typeof manifest.bin === 'string') return manifest.bin;
   if (manifest.bin !== null && typeof manifest.bin === 'object') {
@@ -239,6 +241,47 @@ async function projectTestRunner(sessionRoot) {
     return testRunnerForManifest(JSON.parse(await readFile(path.join(sessionRoot, 'package.json'), 'utf8')));
   } catch {
     return 'vitest';
+  }
+}
+
+/**
+ * The CLI 4 compatibility application ships Vitest with Happy DOM, so its
+ * unit command does not launch a browser. This deliberately verifies the
+ * generated project shape before omitting BrowserCapability: WTR, components,
+ * regular Vitest projects, and every CLI 5 application continue through the
+ * browser prerequisite path in testProject.
+ */
+async function isGeneratedBridge3HappyDomVitestProject(sessionRoot, runnerName, component) {
+  if (component || runnerName !== 'vitest') return false;
+  try {
+    const [recipeSource, manifestSource, configSource] = await Promise.all([
+      readFile(path.join(sessionRoot, '.open-cells-academy-recipe.json'), 'utf8'),
+      readFile(path.join(sessionRoot, 'package.json'), 'utf8'),
+      readFile(path.join(sessionRoot, 'vitest.config.js'), 'utf8')
+    ]);
+    const recipe = JSON.parse(recipeSource);
+    const manifest = JSON.parse(manifestSource);
+    const capabilities = recipe?.capabilities;
+    const devDependencies = manifest?.devDependencies;
+    return (
+      isRecord(recipe) &&
+      recipe.schema === 1 &&
+      recipe.kind === 'app' &&
+      recipe.cellsVersion === '4' &&
+      BRIDGE3_APP_PROFILES.has(recipe.profile) &&
+      Array.isArray(capabilities) &&
+      capabilities.includes('unit-browser-tests') &&
+      isRecord(manifest) &&
+      manifest.type === 'module' &&
+      manifest.scripts?.test === 'cells app:test' &&
+      isRecord(devDependencies) &&
+      typeof devDependencies.vitest === 'string' &&
+      typeof devDependencies['happy-dom'] === 'string' &&
+      configSource.includes("environment: 'happy-dom'") &&
+      configSource.includes("include: ['test/unit/**/*.test.js']")
+    );
+  } catch {
+    return false;
   }
 }
 
@@ -539,6 +582,7 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
       ? (parsed.providedOptions.wtr === true ? 'wtr' : 'vitest')
       : await projectTestRunner(session.root);
     const wtrRequested = runnerName === 'wtr';
+    const happyDomBridge3 = await isGeneratedBridge3HappyDomVitestProject(session.root, runnerName, component);
     let runner = wtrRequested ? tools.wtr : tools.vitest;
     if (runner === undefined) return toolMissing('testing');
     const projectExecutable = await projectTestExecutable(session.root, wtrRequested ? 'wtr' : 'vitest');
@@ -569,7 +613,7 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
     return useCase(Object.freeze({
       session,
       runner,
-      browser: tools.browser,
+      browser: happyDomBridge3 ? undefined : tools.browser,
       signals: process,
       env: Object.freeze(Object.fromEntries(Object.entries(process.env).filter(([, value]) => typeof value === 'string'))),
       updateLocales,

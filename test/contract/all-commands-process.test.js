@@ -138,6 +138,77 @@ test('contract: app:create and component:create dispatch to real use cases and b
   assert.notEqual(negatedConflict.exitCode, 0);
 });
 
+test('contract: only the generated CLI 4 Happy DOM Vitest shape skips Chromium while WTR and CLI 5 tests retain it', async t => {
+  const root = await workspace(t);
+  const api = createFakeToolApi();
+  let browserChecks = 0;
+  api.browser = {
+    async chromiumAvailable() {
+      browserChecks += 1;
+      return false;
+    }
+  };
+  await writeFile(path.join(root, '.open-cells-academy-recipe.json'), JSON.stringify({
+    schema: 1,
+    kind: 'app',
+    profile: 'web-app',
+    name: 'bridge3-happy-dom',
+    cellsVersion: '4',
+    capabilities: ['cells-config', 'routing', 'unit-browser-tests']
+  }, null, 2));
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({
+    name: 'bridge3-happy-dom',
+    private: true,
+    type: 'module',
+    scripts: { test: 'cells app:test' },
+    devDependencies: { vitest: '^3.2.4', 'happy-dom': '^20.11.2' }
+  }, null, 2));
+  await writeFile(path.join(root, 'vitest.config.js'), "export default { test: { environment: 'happy-dom', include: ['test/unit/**/*.test.js'] } };\n");
+  await mkdir(path.join(root, 'test', 'unit'), { recursive: true });
+  await writeFile(path.join(root, 'test', 'unit', 'runtime.test.js'), 'test("runs", () => {});\n');
+
+  const { dispatch } = resolveDispatch({ api, cwd: root });
+  const cli = registryFor(dispatch);
+  const happyDom = await cli.run(['app:test'], { env: {} });
+  assert.equal(happyDom.exitCode, 0, happyDom.stderr);
+  assert.equal(browserChecks, 0);
+  assert.equal(api.testingRuns, 1);
+
+  await writeFile(path.join(root, '.open-cells-academy-recipe.json'), JSON.stringify({
+    schema: 1,
+    kind: 'app',
+    profile: 'unrecognized-compatibility-shape',
+    name: 'bridge3-happy-dom',
+    cellsVersion: '4',
+    capabilities: ['cells-config', 'routing', 'unit-browser-tests']
+  }, null, 2));
+  const malformedBridge3 = await cli.run(['app:test'], { env: {} });
+  assert.equal(malformedBridge3.exitCode, 1);
+  assert.match(malformedBridge3.stderr, /Chromium is not available/u);
+  assert.equal(browserChecks, 1);
+  assert.equal(api.testingRuns, 1);
+
+  const wtr = await cli.run(['app:test', '--wtr'], { env: {} });
+  assert.equal(wtr.exitCode, 1);
+  assert.match(wtr.stderr, /Chromium is not available/u);
+  assert.equal(browserChecks, 2);
+  assert.equal(api.testingRuns, 1);
+
+  await writeFile(path.join(root, '.open-cells-academy-recipe.json'), JSON.stringify({
+    schema: 1,
+    kind: 'app',
+    profile: 'web-app',
+    name: 'bridge4-browser',
+    cellsVersion: '5',
+    capabilities: ['cells-config', 'routing', 'unit-browser-tests']
+  }, null, 2));
+  const bridge4 = await cli.run(['app:test'], { env: {} });
+  assert.equal(bridge4.exitCode, 1);
+  assert.match(bridge4.stderr, /Chromium is not available/u);
+  assert.equal(browserChecks, 3);
+  assert.equal(api.testingRuns, 1);
+});
+
 test('contract: lit-component:create selects the CLI 4 request contract without bypassing creation safety', async t => {
   const root = await workspace(t);
   const api = createFakeToolApi();

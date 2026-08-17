@@ -892,6 +892,10 @@ This generated app ships an Academy-owned Bridge 3 compatibility runtime in \`ap
 
 Use the supported CLI 4 workflow: \`cells app:serve -c dev.js\`, \`cells app:test\`, and \`cells app:locales -c dev.js\`. Build and lint adapters remain outside this compatibility payload until their dedicated toolchain work is available.
 
+## Optional browser E2E
+
+The optional \`npm run e2e\` script requires an already-installed Google Chrome channel. This scaffold does not download a browser. Install it explicitly with \`npx playwright install chrome\`, then run \`npm run e2e\`. The generated Playwright configuration uses \`channel: 'chrome'\` so this browser prerequisite stays visible and intentional.
+
 The catalog is the initial Composer page. It publishes the public \`academy_learning_progress\` channel and links to the lesson through a named page definition. The lesson consumes the latest progress while active and releases its subscription when it leaves. All lesson data is local fixture content; the scaffold has no business endpoint, identity flow, analytics package, or private design dependency.
 `;
 }
