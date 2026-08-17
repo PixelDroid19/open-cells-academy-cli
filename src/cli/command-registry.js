@@ -19,6 +19,12 @@ const componentCreateOptions = () => [
   boolean('installDeps', ['--install-deps'], { defaultValue: false, required: false })
 ];
 
+const appCreateOptions = () => [
+  boolean('e2e', ['--e2e'], { defaultValue: false, required: false }),
+  jsonOrPath('scaffold', ['-s', '--scaffold'], { required: false }),
+  boolean('installDeps', ['--install-deps', '--installDeps'], { defaultValue: false, required: false })
+];
+
 const componentDevOptions = () => [
   number('port', ['-p', '--port'], { defaultValue: 8001, required: false }),
   boolean('open', ['-o', '--open'], { defaultValue: true, required: false }),
@@ -73,7 +79,7 @@ export function createCommandRegistry() {
         string('name', ['-n', '--name'], { defaultValue: 'CHANGELOG.md', required: false })
       ])
     ],
-    ['app:create', command('app:create', 'command_app_create', [jsonOrPath('scaffold', ['-s', '--scaffold'], { required: false })], false)],
+    ['app:create', command('app:create', 'command_app_create', appCreateOptions(), false)],
     [
       'app:dev',
       command('app:dev', 'command_app_dev', [

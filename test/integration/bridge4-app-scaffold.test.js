@@ -407,7 +407,7 @@ test('contract: default application creation normalizes into the Bridge 4 payloa
   assert.doesNotMatch(bootstrap, /@cells\/|startBridge/);
 });
 
-test('red: CLI 5 scripts and E2E server use the local Cells configuration workflow while CLI 4 scripts stay unchanged', () => {
+test('red: CLI 5 scripts and E2E server use the local Cells configuration workflow while CLI 4 advertises only implemented compatibility commands', () => {
   const modern = fileMap(composeRecipe('web-app', {
     kind: 'app',
     name: 'bridge4-local-scripts',
@@ -428,9 +428,12 @@ test('red: CLI 5 scripts and E2E server use the local Cells configuration workfl
   assert.equal(modernMetadata.scripts.preview, 'cells app:preview -c prod.js');
   assert.match(playwrightConfig, /cells app:dev -c dev\.js/);
   assert.doesNotMatch(playwrightConfig, /npm run dev/);
-  assert.equal(legacyMetadata.scripts.dev, 'vite');
-  assert.equal(legacyMetadata.scripts.build, 'vite build');
-  assert.equal(legacyMetadata.scripts.preview, 'vite preview');
+  assert.deepEqual(Object.keys(legacyMetadata.scripts).sort(), ['academy:version', 'locales', 'serve', 'test']);
+  assert.equal(legacyMetadata.scripts.serve, 'cells app:serve -c dev.js');
+  assert.equal(legacyMetadata.scripts.build, undefined);
+  assert.equal(legacyMetadata.scripts.dev, undefined);
+  assert.equal(legacyMetadata.scripts.lint, undefined);
+  assert.equal(legacyMetadata.scripts.preview, undefined);
 });
 
 test('red: generated CLI 5 scripts serve, build, and execute the E2E overlay through the local Cells binary', { timeout: 120_000 }, async t => {
@@ -504,8 +507,9 @@ test('red: omitting the Cells version emits Bridge 4 while explicit Cells 4 pres
 
   assert.equal(defaultFiles.has('app/scripts/app.js'), true);
   assert.equal(defaultFiles.has('src/runtime/academy-core-facade.js'), false);
-  assert.equal(legacyFiles.has('src/runtime/academy-core-facade.js'), true);
-  assert.equal(legacyFiles.has('app/scripts/app.js'), false);
+  assert.equal(legacyFiles.has('src/runtime/academy-core-facade.js'), false);
+  assert.equal(legacyFiles.has('app/scripts/app.js'), true);
+  assert.equal(legacyFiles.has('app/vendor/runtime/academy-bridge3-compat.js'), true);
 });
 
 test('red: Bridge 4 configs use supported locale discovery and a CLI-selected application config module', async t => {

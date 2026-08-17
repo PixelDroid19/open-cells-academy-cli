@@ -7,6 +7,7 @@ import { profileDefinition as webAppProfile } from './app/web-app.js';
 import { profileDefinition as webMobileAppProfile } from './app/web-mobile-app.js';
 import { createCapability } from './capabilities/index.js';
 import { createApplicationPayload } from './app/app-payload.js';
+import { bridge3Capabilities } from './app/bridge3-app-payload.js';
 import { profileDefinition as componentProfile } from './component/component.js';
 import { createComponentPayload } from './component/component-payload.js';
 export { applicationCapabilityOrder, componentCapabilityOrder } from './profile-definition.js';
@@ -78,12 +79,7 @@ function packageMetadata(options, dependencies) {
         }
       : {
           'academy:version': 'cells --version',
-          build: 'vite build',
-          'cells:build': 'cells app:build -c prod.js',
-          dev: 'vite',
-          lint: 'cells app:lint',
           locales: 'cells app:locales -c dev.js',
-          preview: 'vite preview',
           serve: 'cells app:serve -c dev.js',
           test: 'cells app:test'
         };
@@ -186,6 +182,9 @@ export function composeRecipe(profile, input = {}) {
     capabilities.push('e2e-playwright');
   }
   const declared = Object.freeze({ ...options, profile });
+  const declarationCapabilities = declared.kind === 'app' && declared.cellsVersion === '4'
+    ? bridge3Capabilities(profile, { e2e: declared.e2e })
+    : capabilities;
   let contribution = ScaffoldPlan.empty();
   if (!(declared.kind === 'app' && declared.cellsVersion === '4')) {
     for (const capability of capabilities) {
@@ -198,5 +197,5 @@ export function composeRecipe(profile, input = {}) {
       ? createComponentPayload(declared)
       : ScaffoldPlan.empty();
   const dependencies = [...contribution.dependencies, ...profilePayload.dependencies];
-  return structuralFiles(declared, capabilities, dependencies).merge(contribution).merge(profilePayload);
+  return structuralFiles(declared, declarationCapabilities, dependencies).merge(contribution).merge(profilePayload);
 }

@@ -133,10 +133,7 @@ function boolOption(parsed, name) {
   return optionOf(parsed, name) === true;
 }
 
-function suppliedCreateFlags(parsed, component) {
-  if (!component) {
-    return Object.freeze({});
-  }
+function suppliedCreateFlags(parsed) {
   const supplied = parsed.providedOptions;
   if (!isRecord(supplied)) {
     return Object.freeze({});
@@ -753,7 +750,7 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
     const creationSchemaDefaults = parsed.command.name === 'lit-component:create'
       ? Object.freeze({ cellsVersion: '4' })
       : undefined;
-    const request = Object.freeze({ scaffold, flags: suppliedCreateFlags(parsed, component) });
+    const request = Object.freeze({ scaffold, flags: suppliedCreateFlags(parsed) });
     const outcome = await useCase(request, Object.freeze({ ...context, creationSchemaDefaults }));
     if (!outcome.ok) {
       return outcome;

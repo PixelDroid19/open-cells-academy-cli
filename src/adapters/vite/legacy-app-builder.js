@@ -8,7 +8,7 @@ import { discoverAppLocaleSources } from './locale-discovery.js';
 import { planAppLocales } from './locales-pipeline.js';
 import { captureStageDirectory, identity, isWithin, readStageFile, sameIdentity } from './stage-capture.js';
 
-const COPIED_DIRECTORIES = Object.freeze(['images', 'resources', 'vendor', 'videos']);
+const COPIED_DIRECTORIES = Object.freeze(['data-managers', 'features', 'images', 'resources', 'vendor', 'videos']);
 const COPIED_FILES = Object.freeze(['favicon.png', 'manifest.json', 'precache.json', 'robots.txt', 'sw-import.js']);
 const COMPOSER_TIMEOUT_MS = 30_000;
 const POLYMER_BRIDGE_SOURCE = 'node_modules/@cells/cells-bridge/dist/cells-polymer-bridge.min.js';

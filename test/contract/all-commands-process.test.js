@@ -82,6 +82,12 @@ test('contract: app:create and component:create dispatch to real use cases and b
   const appManifest = await readFile(path.join(root, 'my-app', 'package.json'), 'utf8');
   assert.match(appManifest, /my-app/);
 
+  const installedApp = await cli.run(['app:create', '--installDeps', '--scaffold', '{"name":"my-installed-app","scaffold":"web-app","cellsVersion":"4"}'], { env: {} });
+  assert.equal(installedApp.exitCode, 0, `app installDeps failed: ${installedApp.stderr}`);
+  assert.equal(installCalls.length, 1);
+  assert.equal(installCalls[0].request.mode, 'install');
+  assert.equal(installCalls[0].root, path.join(root, 'my-installed-app'));
+
   const componentResult = await cli.run(['component:create', '--e2e', '--scaffold', '{"name":"my-button","namespace":"@academy"}'], { env: {} });
   assert.equal(componentResult.exitCode, 0);
   const componentRoot = path.join(root, 'my-button');
@@ -111,19 +117,19 @@ test('contract: app:create and component:create dispatch to real use cases and b
 
   const installed = await cli.run(['component:create', '--install-deps', '--scaffold', '{"name":"my-panel","namespace":"@academy"}'], { env: {} });
   assert.equal(installed.exitCode, 0, `component install-deps failed: ${installed.stderr}`);
-  assert.equal(installCalls.length, 1);
-  assert.equal(installCalls[0].request.mode, 'install');
-  assert.equal(installCalls[0].root, path.join(root, 'my-panel'));
+  assert.equal(installCalls.length, 2);
+  assert.equal(installCalls[1].request.mode, 'install');
+  assert.equal(installCalls[1].root, path.join(root, 'my-panel'));
 
   const defaultResult = await cli.run(['component:create', '--scaffold', '{"name":"my-banner","namespace":"@academy"}'], { env: {} });
   assert.equal(defaultResult.exitCode, 0, `component default create failed: ${defaultResult.stderr}`);
-  assert.equal(installCalls.length, 1);
+  assert.equal(installCalls.length, 2);
   const defaultManifest = JSON.parse(await readFile(path.join(root, 'my-banner', 'package.json'), 'utf8'));
   assert.equal(defaultManifest.scripts.e2e, undefined);
 
   const noInstallResult = await cli.run(['component:create', '--no-install-deps', '--scaffold', '{"name":"my-chip","namespace":"@academy"}'], { env: {} });
   assert.equal(noInstallResult.exitCode, 0, `component no-install-deps failed: ${noInstallResult.stderr}`);
-  assert.equal(installCalls.length, 1);
+  assert.equal(installCalls.length, 2);
 
   const conflict = await cli.run(['component:create', '--e2e', '--scaffold', '{"name":"my-conflict","namespace":"@academy","e2e":false}'], { env: {} });
   assert.notEqual(conflict.exitCode, 0);

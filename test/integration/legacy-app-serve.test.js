@@ -4,6 +4,7 @@ import { createServer as createNetServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { chromium } from 'playwright';
 import * as vite from 'vite';
 import * as sass from 'sass';
 
@@ -34,6 +35,21 @@ async function within(milliseconds, label, operation) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function directorySnapshot(root, relative = '') {
+  const directory = path.join(root, relative);
+  const entries = await readdir(directory, { withFileTypes: true });
+  const snapshot = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    const child = relative === '' ? entry.name : `${relative}/${entry.name}`;
+    if (entry.isDirectory()) {
+      snapshot.push(...await directorySnapshot(root, child));
+      continue;
+    }
+    if (entry.isFile()) snapshot.push(Object.freeze({ path: child, content: (await readFile(path.join(root, child))).toString('base64') }));
+  }
+  return Object.freeze(snapshot);
 }
 
 async function fixture(t, { preparedDist = true } = {}) {
@@ -250,7 +266,7 @@ test('integration: a generated Bridge 3 application serves, rebuilds, and preser
 
   assert.equal(response.status, 200);
   assert.match(await response.text(), /data-open-cells-route="catalog"/u);
-  assert.match(index, /Open Cells learning catalog/u);
+  assert.match(index, /<main id="app__content" aria-live="polite"><\/main>/u);
   assert.match(bootstrap, /"composerEndpoint":"composerMocks"/u);
   assert.equal(composer.template.tag, 'academy-learning-shell');
   assert.match(initialImports, /academy-learning-shell\/academy-learning-shell\.html/u);
@@ -261,19 +277,33 @@ test('integration: a generated Bridge 3 application serves, rebuilds, and preser
   const lesson = path.join(project, 'app', 'pages', 'lesson-page', 'lesson-page.js');
   const originalLesson = await readFile(lesson, 'utf8');
   await new Promise(resolve => setTimeout(resolve, 100));
-  await writeFile(lesson, originalLesson.replace('Latest progress:', 'Rebuilt progress:'));
+  await writeFile(lesson, originalLesson.replace('academy lesson render marker', 'academy lesson rebuilt marker'));
   await within(5_000, 'Bridge 3 page rebuild', (async () => {
     while (true) {
       const rebuilt = await readFile(path.join(project, 'dist', 'pages', 'lesson-page', 'lesson-page.js'), 'utf8');
-      if (rebuilt.includes('Rebuilt progress:')) return;
+      if (rebuilt.includes('academy lesson rebuilt marker')) return;
       await new Promise(resolve => setTimeout(resolve, 25));
     }
   })());
 
-  const stableIndex = await readFile(path.join(project, 'dist', 'index.html'), 'utf8');
-  await writeFile(path.join(project, 'app', 'composerMocksTpl', 'catalog.js'), 'module.exports = () => { throw new Error("Composer rebuild failure"); };\n');
-  await new Promise(resolve => setTimeout(resolve, 350));
-  assert.equal(await readFile(path.join(project, 'dist', 'index.html'), 'utf8'), stableIndex);
+  const stableDist = await directorySnapshot(path.join(project, 'dist'));
+  const stableResponse = await (await fetch(ready.url)).text();
+  const rebuildMarker = path.join(project, 'composer-rebuild-attempt.txt');
+  await writeFile(path.join(project, 'app', 'composerMocksTpl', 'catalog.js'), `const fs = require('node:fs'); module.exports = () => { fs.writeFileSync(${JSON.stringify(rebuildMarker)}, 'attempted'); throw new Error('Composer rebuild failure'); };\n`);
+  await within(5_000, 'Bridge 3 Composer rebuild attempt', (async () => {
+    while (true) {
+      try {
+        if (await readFile(rebuildMarker, 'utf8') === 'attempted') return;
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+  })());
+  const failureResponse = await within(5_000, 'Bridge 3 failed rebuild boundary', fetch(ready.url));
+  assert.equal(failureResponse.status, 200);
+  assert.equal(await failureResponse.text(), stableResponse);
+  assert.deepEqual(await directorySnapshot(path.join(project, 'dist')), stableDist);
 
   await handle.close();
   handle = undefined;
@@ -283,6 +313,70 @@ test('integration: a generated Bridge 3 application serves, rebuilds, and preser
     server.listen(ready.port, '127.0.0.1', () => resolve(server));
   });
   await new Promise((resolve, reject) => probe.close(error => error === undefined ? resolve() : reject(error)));
+});
+
+test('integration: a generated Academy-owned Bridge 3 compatibility runtime drives catalog, lesson, retained state, leave cleanup, and locales in Chrome', { timeout: 30_000 }, async t => {
+  const { filesystem, project, session } = await bridge3Fixture(t);
+  let handle;
+  let browser;
+  t.after(async () => {
+    await browser?.close();
+    await handle?.close();
+  });
+
+  handle = await devApp(Object.freeze({
+    session,
+    filesystem,
+    compiler: new SassCompiler(sass),
+    toolchain: new AppToolchain(vite),
+    configName: 'dev.js',
+    runtime: 'legacy-dist',
+    options: Object.freeze({ host: '127.0.0.1', port: 0, strictPort: true, open: false })
+  }));
+  const ready = await handle.ready;
+  browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const page = await browser.newPage();
+  const runtimeErrors = [];
+  page.on('pageerror', error => runtimeErrors.push(error.message));
+
+  await page.goto(ready.url, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.CellsPolymer?.runtime?.whenIdle !== undefined, undefined, { timeout: 5_000 });
+  await page.evaluate(() => window.CellsPolymer.runtime.whenIdle());
+  await page.getByRole('heading', { name: 'Open Cells learning catalog' }).waitFor({ timeout: 5_000 });
+  await page.locator('[data-academy-template="academy-learning-shell"]').waitFor({ timeout: 5_000 });
+  await page.locator('[data-data-state="ready"]').waitFor({ timeout: 5_000 });
+  await page.getByRole('button', { name: 'Open lesson' }).click();
+  await page.waitForURL(url => url.hash === '#!/lesson?lessonId=introduction', { timeout: 5_000 });
+  await page.getByRole('heading', { name: 'Open Cells lesson: introduction' }).waitFor({ timeout: 5_000 });
+  await page.getByText('Latest progress: introduction').waitFor({ timeout: 5_000 });
+
+  const afterLeave = await page.evaluate(async () => {
+    const runtime = window.CellsPolymer.runtime;
+    const lesson = document.querySelector('academy-lesson-page');
+    const before = lesson.textContent;
+    await runtime.navigate('catalog');
+    await runtime.whenIdle();
+    runtime.publish('academy_learning_progress', { lessonId: 'after-leave', status: 'ready' });
+    return {
+      after: lesson.textContent,
+      before,
+      connected: lesson.isConnected,
+      route: document.body.dataset.route
+    };
+  });
+  assert.deepEqual(afterLeave, {
+    after: afterLeave.before,
+    before: afterLeave.before,
+    connected: false,
+    route: 'catalog'
+  });
+
+  await page.getByRole('button', { name: 'Spanish' }).click();
+  await page.getByRole('heading', { name: 'Catálogo de aprendizaje Open Cells' }).waitFor({ timeout: 5_000 });
+  assert.equal(await page.locator('html').getAttribute('lang'), 'es');
+  assert.equal(await page.title(), 'Catálogo de aprendizaje Open Cells');
+  assert.deepEqual(runtimeErrors, []);
+  assert.equal(await readFile(path.join(project, 'dist', 'vendor', 'runtime', 'academy-bridge3-compat.js'), 'utf8').then(() => true), true);
 });
 
 test('integration: closing legacy serve cancels an active composer rebuild', async t => {

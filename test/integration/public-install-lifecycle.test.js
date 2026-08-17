@@ -83,3 +83,42 @@ test('public tarball runs through npm exec and creates app and component project
   await access(path.join(workspace, 'npx-academy-app', 'src', 'main.js'));
   await access(path.join(workspace, 'academy-learning-card', 'src', 'AcademyLearningCard.js'));
 });
+
+test('public tarball creates, installs, and runs every advertised CLI 4 compatibility script through the public registry', { timeout: 300_000 }, async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'open-cells-bridge3-public-install-'));
+  t.after(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+  const env = publicEnvironment(root);
+  const tarball = await packageTarball(root, env);
+  const workspace = path.join(root, 'workspace');
+  await mkdir(workspace, { recursive: true });
+
+  const created = await runEphemeral(tarball, workspace, env, [
+    'app:create',
+    '--installDeps',
+    '--scaffold',
+    '{"name":"bridge3-public-app","scaffold":"web-app","cellsVersion":"4","e2e":true}'
+  ]);
+  assert.doesNotMatch(created.stderr, /npm error|ERR!/i);
+
+  const project = path.join(workspace, 'bridge3-public-app');
+  const manifest = JSON.parse(await readFile(path.join(project, 'package.json'), 'utf8'));
+  assert.deepEqual(Object.keys(manifest.scripts).sort(), ['academy:version', 'e2e', 'locales', 'serve', 'test']);
+  for (const dependency of ['@cells/cells-bridge', '@cells/cells-page-mixin', 'cells-app-template', 'lit', '@open-cells/core', '@open-cells/page-mixin']) {
+    assert.equal(manifest.dependencies[dependency], undefined);
+    assert.equal(manifest.devDependencies[dependency], undefined);
+  }
+
+  const lock = JSON.parse(await readFile(path.join(project, 'package-lock.json'), 'utf8'));
+  const resolved = Object.values(lock.packages)
+    .map(entry => entry?.resolved)
+    .filter(value => typeof value === 'string');
+  assert.equal(resolved.every(value => value.startsWith('https://registry.npmjs.org/') || value === 'file:tools/open-cells-academy-cli-0.1.0.tgz'), true);
+
+  const scriptEnvironment = { ...env, NPM_CONFIG_IGNORE_SCRIPTS: 'false' };
+  for (const script of ['academy:version', 'test', 'locales', 'e2e']) {
+    const result = await npm(['run', script], { cwd: project, env: scriptEnvironment });
+    assert.doesNotMatch(result.stderr, /npm error|ERR!/i, `${script} failed: ${result.stderr}`);
+  }
+});
