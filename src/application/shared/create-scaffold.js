@@ -6,6 +6,7 @@ import { composeRecipe } from '../../recipes/compose-recipe.js';
 const APP_PROFILES = new Set(['blank', 'web-app', 'web-mobile-app', 'academy-app']);
 const CELLS_VERSIONS = new Set(['4', '5']);
 const COMPONENT_BASES = new Set(['lit1', 'lit3']);
+const COMPONENT_PROFILES = new Set(['component', 'behavior', 'data-manager', 'theme']);
 const SIMPLE_TARBALL = /^[A-Za-z0-9][A-Za-z0-9._-]*\.tgz$/;
 
 function isRecord(value) {
@@ -65,14 +66,24 @@ function normalizeCellsVersion(cellsVersion) {
   return cellsVersion;
 }
 
-function normalizeComponentBase(componentBase, cellsVersion) {
+function normalizeComponentBase(componentBase, cellsVersion, componentProfile) {
   if (componentBase === undefined) {
-    return cellsVersion === '4' ? 'lit3' : undefined;
+    return cellsVersion === '4' && componentProfile === undefined ? 'lit3' : undefined;
   }
   if (cellsVersion !== '4' || typeof componentBase !== 'string' || !COMPONENT_BASES.has(componentBase)) {
     throw typedError('INVALID_INPUT', { field: 'componentBase' });
   }
   return componentBase;
+}
+
+function normalizeComponentProfile(componentProfile, cellsVersion) {
+  if (componentProfile === undefined) {
+    return undefined;
+  }
+  if (cellsVersion !== '4' || typeof componentProfile !== 'string' || !COMPONENT_PROFILES.has(componentProfile)) {
+    throw typedError('INVALID_INPUT', { field: 'componentProfile' });
+  }
+  return componentProfile;
 }
 
 function applyCreationSchemaDefaults(input, context) {
@@ -191,11 +202,15 @@ function resolvedBoolean(input, flags, name) {
 }
 
 function normalizeComponentSchema(input, flags) {
-  assertKnownFields(input, new Set(['name', 'namespace', 'cellsVersion', 'componentBase', 'e2e', 'installDeps']));
+  assertKnownFields(input, new Set(['name', 'namespace', 'cellsVersion', 'componentBase', 'componentProfile', 'e2e', 'installDeps']));
   const name = normalizeComponentName(input.name);
   const namespace = normalizeNamespace(input.namespace);
   const cellsVersion = normalizeCellsVersion(input.cellsVersion);
-  const componentBase = normalizeComponentBase(input.componentBase, cellsVersion);
+  const componentProfile = normalizeComponentProfile(input.componentProfile, cellsVersion);
+  const componentBase = normalizeComponentBase(input.componentBase, cellsVersion, componentProfile);
+  if (componentProfile !== undefined && input.componentBase !== undefined) {
+    throw typedError('INVALID_INPUT', { field: 'componentBase' });
+  }
   const normalized = {
     kind: 'component',
     name,
@@ -208,6 +223,9 @@ function normalizeComponentSchema(input, flags) {
   };
   if (componentBase !== undefined) {
     normalized.componentBase = componentBase;
+  }
+  if (componentProfile !== undefined) {
+    normalized.componentProfile = componentProfile;
   }
   return Object.freeze(normalized);
 }

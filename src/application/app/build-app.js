@@ -29,6 +29,7 @@ export async function buildApp(context) {
   return normalized.toolchain.buildApp(Object.freeze({
     session: normalized.session,
     filesystem: normalized.filesystem,
+    compiler: normalized.compiler,
     configName: normalized.configName,
     config,
     options: normalized.options,

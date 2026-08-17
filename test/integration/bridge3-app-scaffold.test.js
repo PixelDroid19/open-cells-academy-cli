@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
+import * as sass from 'sass';
+import * as vite from 'vite';
 
+import { AppToolchain } from '../../src/adapters/vite/app-toolchain.js';
+import { buildApp } from '../../src/application/app/build-app.js';
+import { NodeFilesystem } from '../../src/adapters/node/node-filesystem.js';
+import { SassCompiler } from '../../src/adapters/sass/sass-compiler.js';
+import { WorkspaceSession } from '../../src/domain/workspace-session.js';
 import { composeRecipe } from '../../src/recipes/compose-recipe.js';
 
 const PROFILE_EXPECTATIONS = Object.freeze({
@@ -25,6 +35,24 @@ function bridge3Files(profile = 'web-app', options = {}) {
     cellsVersion: '4',
     ...options
   }));
+}
+
+async function materializedBridge3Project(t) {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'open-cells-bridge3-build-'));
+  t.after(async () => rm(root, { recursive: true, force: true }));
+  const filesystem = new NodeFilesystem();
+  await writeFile(path.join(root, 'package.json'), '{"name":"bridge3-build-owner","private":true,"type":"module"}\n');
+  const owner = await WorkspaceSession.open(root, filesystem);
+  const publication = await filesystem.applyPlanAtomically(owner, composeRecipe('web-app', {
+    kind: 'app',
+    name: 'bridge3-build-app',
+    cellsVersion: '4'
+  }), 'bridge3-build-app');
+  return Object.freeze({
+    filesystem,
+    project: publication.destination,
+    session: await WorkspaceSession.open(publication.destination, filesystem)
+  });
 }
 
 test('contract: CLI 4 emits an Academy-owned compatibility runtime with only public dependencies and working commands', () => {
@@ -74,12 +102,30 @@ test('contract: CLI 4 emits an Academy-owned compatibility runtime with only pub
   }
   assert.equal(metadata.devDependencies.vitest, '^3.2.4');
   assert.equal(metadata.devDependencies['happy-dom'], '^20.11.2');
+  assert.equal(metadata.devDependencies.eslint, '^9.0.0');
   assert.match(files.get('app/scripts/app.js'), /installAcademyBridge3Compatibility/u);
   assert.match(files.get('app/scripts/app.js'), /mainNode/u);
   assert.match(files.get('app/pages/catalog-page/catalog-page.js'), /AcademyBridge3PageMixin/u);
   assert.match(files.get('app/pages/lesson-page/lesson-page.js'), /AcademyBridge3PageMixin/u);
   assert.match(files.get('README.md'), /Academy-owned Bridge 3 compatibility runtime/u);
   assert.doesNotMatch(output, /@cells\/|@open-cells\/|startApp|startBridge/u);
+});
+
+test('integration: CLI 4 generated app:build publishes the legacy dist from app templates', async t => {
+  const { filesystem, project, session } = await materializedBridge3Project(t);
+  const result = await buildApp(Object.freeze({
+    session,
+    filesystem,
+    compiler: new SassCompiler(sass),
+    toolchain: new AppToolchain(vite),
+    configName: 'prod.js'
+  }));
+
+  assert.equal(result.destination, path.join(project, 'dist'));
+  assert.match(await readFile(path.join(project, 'dist', 'index.html'), 'utf8'), /data-open-cells-route="catalog"/u);
+  assert.match(await readFile(path.join(project, 'dist', 'scripts', 'app-bootstrap.js'), 'utf8'), /Open Cells learning catalog/u);
+  assert.match(await readFile(path.join(project, 'dist', 'scripts', 'app.js'), 'utf8'), /academy-bridge3-compat/u);
+  assert.equal(await readFile(path.join(project, 'dist', 'styles', 'main.css'), 'utf8').then(value => value.length > 0), true);
 });
 
 test('contract: CLI 4 profile matrix emits distinct owned feature behavior and only emitted capabilities', () => {

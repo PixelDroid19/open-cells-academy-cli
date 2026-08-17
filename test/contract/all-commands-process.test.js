@@ -270,6 +270,29 @@ test('contract: lit-component:create selects the CLI 4 request contract without 
   assert.notEqual(duplicate.exitCode, 0);
 });
 
+test('contract: component:create selects an explicit CLI 4 Polymer profile without mixing the modern payload', async t => {
+  const root = await workspace(t);
+  const api = createFakeToolApi();
+  const { dispatch } = resolveDispatch({ api, cwd: root });
+  const cli = registryFor(dispatch);
+  const result = await cli.run([
+    'component:create',
+    '--scaffold',
+    '{"name":"legacy-behavior","namespace":"@academy","cellsVersion":"4","componentProfile":"behavior"}'
+  ], { env: {} });
+  assert.equal(result.exitCode, 0, result.stderr);
+  const project = path.join(root, 'legacy-behavior');
+  const declaration = JSON.parse(await readFile(path.join(project, '.open-cells-academy-recipe.json'), 'utf8'));
+  const manifest = JSON.parse(await readFile(path.join(project, 'package.json'), 'utf8'));
+  assert.equal(declaration.cellsVersion, '4');
+  assert.equal(declaration.componentProfile, 'behavior');
+  assert.equal(manifest.dependencies['@polymer/polymer'], '^3.5.0');
+  assert.equal(manifest.dependencies.lit, undefined);
+  assert.equal(manifest.scripts.serve, undefined);
+  assert.equal(manifest.scripts.dev, 'cells component:serve');
+  assert.match(await readFile(path.join(project, 'src', 'legacy-behavior.js'), 'utf8'), /Behavior/u);
+});
+
 test('contract: lit-component:create rejects every explicit non-CLI4 version before publishing inline or file scaffolds', async t => {
   const root = await workspace(t);
   const api = createFakeToolApi();

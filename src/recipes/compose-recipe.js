@@ -10,6 +10,8 @@ import { createApplicationPayload } from './app/app-payload.js';
 import { bridge3Capabilities } from './app/bridge3-app-payload.js';
 import { profileDefinition as componentProfile } from './component/component.js';
 import { createComponentPayload } from './component/component-payload.js';
+import { createLegacyComponentPayload } from './component/legacy-component-payload.js';
+import { isLitBase, isPolymerProfile } from './component/legacy-component-profiles.js';
 export { applicationCapabilityOrder, componentCapabilityOrder } from './profile-definition.js';
 
 export const profileRegistry = createReadonlyMap([
@@ -45,6 +47,18 @@ function assertOptions(options) {
       !(artifact.content instanceof Uint8Array)
     ) {
       throw typedError('INVALID_INPUT', { field: 'localCli' });
+    }
+  }
+  if (options.kind === 'component') {
+    const hasBase = options.componentBase !== undefined;
+    const hasProfile = options.componentProfile !== undefined;
+    if (options.cellsVersion === '5' && (hasBase || hasProfile)) {
+      throw typedError('INVALID_INPUT', { field: hasProfile ? 'componentProfile' : 'componentBase' });
+    }
+    if (options.cellsVersion === '4') {
+      if (hasBase === hasProfile || (hasBase && !isLitBase(options.componentBase)) || (hasProfile && !isPolymerProfile(options.componentProfile))) {
+        throw typedError('INVALID_INPUT', { field: hasProfile ? 'componentProfile' : 'componentBase' });
+      }
     }
   }
   return Object.freeze({ ...options, cellsVersion, e2e: options.e2e ?? false });
@@ -90,15 +104,17 @@ function packageMetadata(options, dependencies) {
       '.': './index.js',
       [`./${options.name}.js`]: `./${options.name}.js`
     };
+    const legacy = options.cellsVersion === '4';
+    const prefix = legacy && options.componentProfile === undefined ? 'lit-component' : 'component';
     metadata.scripts = {
       build: 'cells component:build:demo',
-      dev: 'cells component:dev',
-      documentation: 'cells component:documentation',
-      lint: 'cells component:lint',
-      locales: 'cells component:locales',
-      sass: 'cells component:sass',
-      test: 'cells component:test',
-      'test:coverage': 'cells component:test --coverage'
+      dev: legacy ? `cells ${prefix}:serve` : 'cells component:dev',
+      documentation: `cells ${prefix}:documentation`,
+      lint: `cells ${prefix}:lint`,
+      locales: `cells ${prefix}:locales`,
+      sass: `cells ${prefix}:sass`,
+      test: `cells ${prefix}:test`,
+      'test:coverage': `cells ${prefix}:test --coverage`
     };
     if (options.e2e) metadata.scripts.e2e = 'playwright test';
   }
@@ -111,6 +127,12 @@ function applicationReadme() {
 
 function componentReadme() {
   return '# Cells Academy component\n\nThis generated component teaches independent Cells-style composition with `WidgetMixin(ScopedElementsMixin(LitElement))`. `WidgetMixin` and the neutral Academy UI constructors are teaching adapters, not native Bridge or design-system APIs. The public host registers the Academy UI constructors in `static get scopedElements()`, keeping `academy-type-text` and `academy-button-default` out of the global custom-elements registry.\n\nThe package exports the class from `index.js` without global registration. `<component-name>.js` is the opt-in tag entry point and registers the host once. Component-owned labels use `this.t(...)`. Its public continuation action calls `this.emitEvent(\'continue\', { component: \'<component-name>\' })`, which emits the prefixed `<component-name>-continue` event with bubbling, composed, and cancelable defaults.\n\nThe SCSS source and aligned `.css.js` runtime style module live in `src/`. The identical EN/ES catalogs live at `locales/locales.json`, `demo/locales/locales.json`, and `test/unit/locales/locales.json`. The demo installs IntlMsg before loading the component and lets users switch English and Spanish. `custom-elements.json` documents the initial public API; `cells component:documentation` regenerates it and `README.md` from source.\n\nThe public Open Cells minimum is 80 percent for statements, branches, functions, and lines. This small teaching component intentionally enforces a stricter 100 percent source-only coverage gate. Use `cells component:test`, `cells component:test --coverage`, and `cells component:test --wtr` for test flows, `cells component:locales` to refresh demo and test catalogs, `cells component:documentation` to refresh docs, `cells component:build:demo` to build the demo, and `cells component:dev` to serve it.\n';
+}
+
+function legacyComponentReadme(options) {
+  const profile = options.componentProfile === undefined ? `Lit ${options.componentBase}` : `Polymer ${options.componentProfile}`;
+  const command = options.componentProfile === undefined ? 'lit-component' : 'component';
+  return `# Open Cells Academy ${profile} component\n\nThis neutral educational scaffold records \`cellsVersion: "4"\` and keeps the CLI 4 component workflow visible. It contains no private design-system, endpoint, or business dependency.\n\nUse \`cells ${command}:serve\`, \`cells ${command}:test\`, \`cells ${command}:locales\`, and \`cells ${command}:documentation\`.\n`;
 }
 
 function structuralFiles(options, capabilities, dependencies) {
@@ -128,6 +150,9 @@ function structuralFiles(options, capabilities, dependencies) {
   if (options.componentBase !== undefined) {
     declaration.componentBase = options.componentBase;
   }
+  if (options.componentProfile !== undefined) {
+    declaration.componentProfile = options.componentProfile;
+  }
   const bridge4Application = options.kind === 'app' && options.cellsVersion === '5';
   const bridge3Application = options.kind === 'app' && options.cellsVersion === '4';
   let plan = ScaffoldPlan.empty()
@@ -135,7 +160,9 @@ function structuralFiles(options, capabilities, dependencies) {
     .addFile('.open-cells-academy-recipe.json', stableJson(declaration))
     .addFile('package.json', stableJson(packageMetadata(options, dependencies)));
   if (!bridge4Application && !bridge3Application) {
-    plan = plan.addFile('README.md', options.kind === 'component' ? componentReadme() : applicationReadme());
+    plan = plan.addFile('README.md', options.kind === 'component'
+      ? (options.cellsVersion === '4' ? legacyComponentReadme(options) : componentReadme())
+      : applicationReadme());
   }
   if (options.kind === 'app' && !bridge4Application && !bridge3Application) {
     plan = plan
@@ -194,7 +221,8 @@ export function composeRecipe(profile, input = {}) {
     ? bridge3Capabilities(profile, { e2e: declared.e2e })
     : capabilities;
   let contribution = ScaffoldPlan.empty();
-  if (!(declared.kind === 'app' && declared.cellsVersion === '4')) {
+  const legacyComponent = declared.kind === 'component' && declared.cellsVersion === '4';
+  if (!(declared.kind === 'app' && declared.cellsVersion === '4') && !legacyComponent) {
     for (const capability of capabilities) {
       contribution = contribution.merge(createCapability(capability, declared));
     }
@@ -202,7 +230,7 @@ export function composeRecipe(profile, input = {}) {
   const profilePayload = declared.kind === 'app'
     ? createApplicationPayload(profile, declared)
     : declared.kind === 'component'
-      ? createComponentPayload(declared)
+      ? declared.cellsVersion === '4' ? createLegacyComponentPayload(declared) : createComponentPayload(declared)
       : ScaffoldPlan.empty();
   const dependencies = [...contribution.dependencies, ...profilePayload.dependencies];
   return structuralFiles(declared, declarationCapabilities, dependencies).merge(contribution).merge(profilePayload);

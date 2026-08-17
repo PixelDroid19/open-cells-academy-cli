@@ -1,6 +1,6 @@
 import { typedError } from '../../domain/workspace-session.js';
 
-const APP_PATTERNS = Object.freeze(['app/src/**/*.{js,mjs}', 'app/index.html']);
+const APP_PATTERNS = Object.freeze(['app/**/*.js', 'app/**/*.mjs']);
 const COMPONENT_PATTERNS = Object.freeze(['src/**/*.{js,mjs}', 'test/**/*.{js,mjs}', '*.js']);
 const BASE_LANGUAGE_OPTIONS = Object.freeze({ ecmaVersion: 'latest', sourceType: 'module' });
 

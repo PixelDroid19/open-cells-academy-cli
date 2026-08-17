@@ -52,7 +52,8 @@ export function createBridge3ApplicationPayload(profile, options) {
     .addDependency('sass', '^1.80.0', 'dev')
     .addDependency('vite', '7.3.6', 'dev')
     .addDependency('vitest', '^3.2.4', 'dev')
-    .addDependency('happy-dom', '^20.11.2', 'dev');
+    .addDependency('happy-dom', '^20.11.2', 'dev')
+    .addDependency('eslint', '^9.0.0', 'dev');
   if (normalized.e2e) plan = plan.addDependency('@playwright/test', '^1.50.0', 'dev');
   for (const [path, source] of Object.entries(sources)) {
     plan = plan.addFile(path, source);

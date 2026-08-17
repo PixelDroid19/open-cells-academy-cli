@@ -946,6 +946,19 @@ export class AppToolchain {
   async buildApp(request) {
     assertBuildRequest(request);
     assertSession(request.session);
+    const legacyTemplate = await status(path.join(request.session.root, 'app', 'tpls', 'index.tpl'));
+    const legacySourceIndex = await status(path.join(request.session.root, 'app', 'index.html'));
+    if (legacyTemplate !== undefined && legacySourceIndex === undefined) {
+      if (!legacyTemplate.isFile() || legacyTemplate.isSymbolicLink()) throw typedError('APP_BUILD_SOURCE_INVALID');
+      return buildLegacyDevelopDist(Object.freeze({
+        session: request.session,
+        filesystem: request.filesystem,
+        compiler: request.compiler,
+        configName: request.configName,
+        config: request.config,
+        signal: request.signal
+      }));
+    }
     const appSource = await captureAppTemplate(request.session);
     const template = await readCapturedAppTemplate(appSource);
     const ownedStage = await createOwnedStage(request.session.root, VITE_STAGE_KIND);
