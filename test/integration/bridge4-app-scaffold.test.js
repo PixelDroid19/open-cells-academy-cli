@@ -75,6 +75,101 @@ async function addNestedBridge4Config(project) {
   await writeFile(nested, production.replace('open-cells-production', 'open-cells-preview'));
 }
 
+async function writeBridge4Config(project, name, source) {
+  const target = path.join(project, 'app', 'config', ...name.split('/'));
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, source);
+}
+
+async function addBridge4SnapshotProbe(project) {
+  await writeFile(path.join(project, 'app', 'scripts', 'snapshot-probe.js'), `import appConfig from 'virtual:open-cells-app-config';
+
+const app = appConfig.app_properties?.app;
+const cells = appConfig.cells_properties;
+
+export const snapshotState = {
+  ownKeys: Object.keys(appConfig).sort(),
+  rootFrozen: Object.isFrozen(appConfig),
+  cellsFrozen: cells !== undefined && Object.isFrozen(cells),
+  appPropertiesFrozen: appConfig.app_properties !== undefined && Object.isFrozen(appConfig.app_properties),
+  appFrozen: app !== undefined && Object.isFrozen(app),
+  nestedFrozen: app?.nested !== undefined && Object.isFrozen(app.nested) && Object.isFrozen(app.nested.phase),
+  listFrozen: Array.isArray(app?.labels) && Object.isFrozen(app.labels),
+  hasServer: Object.hasOwn(appConfig, 'server'),
+  hasBuild: Object.hasOwn(appConfig, 'build'),
+  hasLocales: Object.hasOwn(appConfig, 'locales'),
+  hasSourcePath: Object.hasOwn(appConfig, 'sourcePath'),
+  hasSourceDependencies: Object.hasOwn(appConfig, 'sourceDependencies'),
+  runtimeConfig: app?.runtimeConfig,
+  initialTemplate: cells?.initialTemplate
+};
+
+export function mutationState() {
+  let rootBlocked = false;
+  let cellsBlocked = false;
+  let appBlocked = false;
+  let nestedBlocked = false;
+  let listBlocked = false;
+  try {
+    appConfig.unexpected = true;
+  } catch {
+    rootBlocked = true;
+  }
+  try {
+    cells.initialTemplate = 'changed';
+  } catch {
+    cellsBlocked = true;
+  }
+  try {
+    app.runtimeConfig = 'changed';
+  } catch {
+    appBlocked = true;
+  }
+  try {
+    app.nested.phase.name = 'changed';
+  } catch {
+    nestedBlocked = true;
+  }
+  try {
+    app.labels.push('changed');
+  } catch {
+    listBlocked = true;
+  }
+  return {
+    rootBlocked,
+    cellsBlocked,
+    appBlocked,
+    nestedBlocked,
+    listBlocked,
+    runtimeConfig: app?.runtimeConfig,
+    initialTemplate: cells?.initialTemplate,
+    phase: app?.nested?.phase?.name
+  };
+}
+`);
+}
+
+async function addStartAppConfigCapture(project) {
+  const target = path.join(project, 'app', 'scripts', 'app.js');
+  const source = await readFile(target, 'utf8');
+  const captured = source.replace("import { startApp } from '@open-cells/core';", "import { getConfig, startApp } from '@open-cells/core';");
+  if (captured === source) throw new Error('Expected generated Open Cells bootstrap import.');
+  await writeFile(target, `${captured}\nwindow.__openCellsRuntimeConfig = getConfig();\n`);
+}
+
+function virtualConfigSpecifier(source) {
+  const match = /from\s+["']([^"']*open-cells-app-config[^"']*)["']/u.exec(source);
+  if (match === null) throw new Error('Expected transformed virtual config import.');
+  return match[1];
+}
+
+async function virtualConfigSource(ready, transformedProbe) {
+  const response = await fetch(new URL(virtualConfigSpecifier(transformedProbe), ready.url));
+  const source = await response.text();
+  assert.equal(response.status, 200, source);
+  return source;
+}
+
 async function replaceBridge4ConfigWithExternalSymlink(t, project, name, externalSentinel) {
   const target = path.join(project, 'app', 'config', ...name.split('/'));
   const source = await readFile(target, 'utf8');
@@ -505,6 +600,302 @@ test('red: actual Vite dev resolves only the validated Bridge 4 config module an
   }
 });
 
+test('red: real Vite exposes only a deeply frozen effective browser config projection', async t => {
+  const { filesystem, project } = await materializeBridge4Project(t, 'bridge4-effective-config-projection');
+  const absoluteRawPath = path.join(project, 'raw-config-path-sentinel');
+  await writeBridge4Config(project, 'dev.js', `export default ${JSON.stringify({
+    initialTemplate: 'catalog',
+    app: {
+      name: 'effective-root-app',
+      runtimeConfig: 'effective-root-runtime',
+      labels: ['first', 'second'],
+      nested: { phase: { name: 'ready' } }
+    },
+    server: { credential: 'fixture-server-secret' },
+    build: { marker: 'fixture-build-secret' },
+    locales: { marker: 'fixture-locales-secret' },
+    sourcePath: absoluteRawPath,
+    sourceDependencies: ['fixture-source-dependency-secret']
+  }, null, 2)};\n`);
+  await addBridge4ConfigProbe(project);
+  await addBridge4SnapshotProbe(project);
+  const session = await WorkspaceSession.open(project, filesystem);
+  const captured = {};
+  const port = await availablePort();
+  const handle = await devApp(Object.freeze({
+    session,
+    toolchain: actualViteToolchain(captured),
+    configName: 'dev.js',
+    options: Object.freeze({ host: '127.0.0.1', port, strictPort: true, open: false })
+  }));
+  try {
+    const ready = await handle.ready;
+    const response = await fetch(new URL('app/scripts/config-probe.js', ready.url));
+    const transformedProbe = await response.text();
+    assert.equal(response.status, 200, transformedProbe);
+    const virtualSource = await virtualConfigSource(ready, transformedProbe);
+    assert.match(virtualSource, /JSON\.parse/);
+    assert.doesNotMatch(virtualSource, /fixture-(?:server|build|locales|source-dependency)-secret|sourcePath/);
+    assert.equal(virtualSource.includes(absoluteRawPath), false);
+    assert.equal(transformedProbe.includes(project), false);
+
+    const probe = await captured.server.ssrLoadModule('/app/scripts/snapshot-probe.js');
+    assert.deepEqual(probe.snapshotState, {
+      ownKeys: ['app_properties', 'cells_properties'],
+      rootFrozen: true,
+      cellsFrozen: true,
+      appPropertiesFrozen: true,
+      appFrozen: true,
+      nestedFrozen: true,
+      listFrozen: true,
+      hasServer: false,
+      hasBuild: false,
+      hasLocales: false,
+      hasSourcePath: false,
+      hasSourceDependencies: false,
+      runtimeConfig: 'effective-root-runtime',
+      initialTemplate: 'catalog'
+    });
+    assert.deepEqual(probe.mutationState(), {
+      rootBlocked: true,
+      cellsBlocked: true,
+      appBlocked: true,
+      nestedBlocked: true,
+      listBlocked: true,
+      runtimeConfig: 'effective-root-runtime',
+      initialTemplate: 'catalog',
+      phase: 'ready'
+    });
+  } finally {
+    await handle.close();
+  }
+});
+
+test('red: real Open Cells startApp receives normalized academy-only and root-only app configuration', { timeout: 60_000 }, async t => {
+  const cases = [
+    Object.freeze({
+      name: 'academy-only',
+      source: Object.freeze({
+        academy: Object.freeze({
+          initialTemplate: 'catalog',
+          app: Object.freeze({ name: 'academy-only-app', runtimeConfig: 'academy-only-runtime', nested: Object.freeze({ kind: 'academy' }) })
+        }),
+        server: Object.freeze({ credential: 'academy-server-secret' })
+      }),
+      expected: Object.freeze({ name: 'academy-only-app', runtimeConfig: 'academy-only-runtime', nested: Object.freeze({ kind: 'academy' }) })
+    }),
+    Object.freeze({
+      name: 'root-only',
+      source: Object.freeze({
+        initialTemplate: 'catalog',
+        app: Object.freeze({ name: 'root-only-app', runtimeConfig: 'root-only-runtime', nested: Object.freeze({ kind: 'root' }) }),
+        server: Object.freeze({ credential: 'root-server-secret' })
+      }),
+      expected: Object.freeze({ name: 'root-only-app', runtimeConfig: 'root-only-runtime', nested: Object.freeze({ kind: 'root' }) })
+    })
+  ];
+  let browser;
+  try {
+    browser = await chromium.launch({ channel: 'chrome', headless: true });
+    for (const scenario of cases) {
+      const { filesystem, project } = await materializeBridge4Project(t, `bridge4-${scenario.name}-runtime-config`);
+      await writeBridge4Config(project, 'dev.js', `export default ${JSON.stringify(scenario.source, null, 2)};\n`);
+      await addStartAppConfigCapture(project);
+      await enableHermeticBridgeBuild(project);
+      const session = await WorkspaceSession.open(project, filesystem);
+      const captured = {};
+      const port = await availablePort();
+      const handle = await devApp(Object.freeze({
+        session,
+        toolchain: actualViteToolchain(captured),
+        configName: 'dev.js',
+        options: Object.freeze({ host: '127.0.0.1', port, strictPort: true, open: false })
+      }));
+      try {
+        const page = await browser.newPage();
+        const ready = await handle.ready;
+        await page.goto(ready.url, { waitUntil: 'domcontentloaded' });
+        await page.waitForFunction(() => window.__openCellsRuntimeConfig !== undefined, undefined, { timeout: 15_000 });
+        const received = await page.evaluate(() => {
+          const config = window.__openCellsRuntimeConfig;
+          return {
+            initialTemplate: config.initialTemplate,
+            app: config.appConfig?.app,
+            hasServer: Object.hasOwn(config, 'server'),
+            hasBuild: Object.hasOwn(config, 'build'),
+            hasLocales: Object.hasOwn(config, 'locales')
+          };
+        });
+        assert.deepEqual(received, {
+          initialTemplate: 'catalog',
+          app: scenario.expected,
+          hasServer: false,
+          hasBuild: false,
+          hasLocales: false
+        });
+        await page.getByRole('heading', { name: 'Learning catalog' }).waitFor({ timeout: 15_000 });
+        await page.close();
+      } finally {
+        await handle.close();
+        assert.equal(captured.server.httpServer.listening, false);
+      }
+    }
+  } finally {
+    await browser?.close();
+  }
+});
+
+test('red: real Vite rejects descriptor-unsafe normalized app values without evaluating accessors or toJSON', async t => {
+  const cases = [
+    Object.freeze({
+      name: 'own __proto__',
+      create() {
+        const app = { runtimeConfig: 'unsafe-own-proto' };
+        Object.defineProperty(app, '__proto__', { value: 'unsafe', enumerable: true });
+        return Object.freeze({ app });
+      }
+    }),
+    Object.freeze({
+      name: 'nested __proto__',
+      create() {
+        const nested = {};
+        Object.defineProperty(nested, '__proto__', { value: 'unsafe', enumerable: true });
+        return Object.freeze({ app: { runtimeConfig: 'unsafe-nested-proto', nested } });
+      }
+    }),
+    Object.freeze({
+      name: 'own prototype',
+      create() {
+        return Object.freeze({ app: { runtimeConfig: 'unsafe-prototype', prototype: 'unsafe' } });
+      }
+    }),
+    Object.freeze({
+      name: 'own constructor',
+      create() {
+        return Object.freeze({ app: { runtimeConfig: 'unsafe-constructor', constructor: 'unsafe' } });
+      }
+    }),
+    Object.freeze({
+      name: 'accessor',
+      create() {
+        let reads = 0;
+        const app = { runtimeConfig: 'unsafe-accessor' };
+        Object.defineProperty(app, 'title', { enumerable: true, get() { reads += 1; return 'unsafe'; } });
+        return Object.freeze({ app, verify() { assert.equal(reads, 0); } });
+      }
+    }),
+    Object.freeze({
+      name: 'nested accessor',
+      create() {
+        let reads = 0;
+        const nested = {};
+        Object.defineProperty(nested, 'title', { enumerable: true, get() { reads += 1; return 'unsafe'; } });
+        return Object.freeze({ app: { runtimeConfig: 'unsafe-nested-accessor', nested }, verify() { assert.equal(reads, 0); } });
+      }
+    }),
+    Object.freeze({
+      name: 'toJSON',
+      create() {
+        let calls = 0;
+        const app = { runtimeConfig: 'unsafe-to-json', toJSON() { calls += 1; return { runtimeConfig: 'unsafe' }; } };
+        return Object.freeze({ app, verify() { assert.equal(calls, 0); } });
+      }
+    }),
+    Object.freeze({
+      name: 'function',
+      create() {
+        return Object.freeze({ app: { runtimeConfig: 'unsafe-function', callback() {} } });
+      }
+    }),
+    Object.freeze({
+      name: 'symbol key',
+      create() {
+        const app = { runtimeConfig: 'unsafe-symbol-key' };
+        app[Symbol('unsafe')] = 'unsafe';
+        return Object.freeze({ app });
+      }
+    }),
+    Object.freeze({
+      name: 'symbol value',
+      create() {
+        return Object.freeze({ app: { runtimeConfig: 'unsafe-symbol-value', marker: Symbol('unsafe') } });
+      }
+    }),
+    Object.freeze({
+      name: 'undefined',
+      create() {
+        return Object.freeze({ app: { runtimeConfig: 'unsafe-undefined', marker: undefined } });
+      }
+    }),
+    Object.freeze({
+      name: 'cycle',
+      create() {
+        const app = { runtimeConfig: 'unsafe-cycle' };
+        app.self = app;
+        return Object.freeze({ app });
+      }
+    }),
+    Object.freeze({
+      name: 'bigint',
+      create() {
+        return Object.freeze({ app: { runtimeConfig: 'unsafe-bigint', marker: 1n } });
+      }
+    }),
+    Object.freeze({
+      name: 'NaN',
+      create() {
+        return Object.freeze({ app: { runtimeConfig: 'unsafe-nan', marker: Number.NaN } });
+      }
+    }),
+    Object.freeze({
+      name: 'Infinity',
+      create() {
+        return Object.freeze({ app: { runtimeConfig: 'unsafe-infinity', marker: Number.POSITIVE_INFINITY } });
+      }
+    }),
+    Object.freeze({
+      name: 'sparse array',
+      create() {
+        const labels = [];
+        labels[1] = 'unsafe';
+        return Object.freeze({ app: { runtimeConfig: 'unsafe-array', labels } });
+      }
+    })
+  ];
+
+  for (const scenario of cases) {
+    const { filesystem, project } = await materializeBridge4Project(t, `bridge4-unsafe-${scenario.name.replaceAll(' ', '-')}`);
+    const session = await WorkspaceSession.open(project, filesystem);
+    const captured = {};
+    const port = await availablePort();
+    const values = scenario.create();
+    let handle;
+    let failure;
+    try {
+      handle = await actualViteToolchain(captured).startDev(Object.freeze({
+        session,
+        config: Object.freeze({
+          app: values.app,
+          runtime: Object.freeze({ initialTemplate: 'catalog' }),
+          legacy: Object.freeze({})
+        }),
+        configName: 'dev.js',
+        host: '127.0.0.1',
+        port,
+        strictPort: true,
+        open: false
+      }));
+    } catch (cause) {
+      failure = cause;
+    } finally {
+      await handle?.close();
+    }
+    assert.equal(failure?.code, 'VITE_DEV_FAILED', scenario.name);
+    assert.equal(captured.server, undefined, scenario.name);
+    values.verify?.();
+  }
+});
+
 test('red: Bridge 4 dev keeps the validated config snapshot when its selected source becomes an external symlink', async t => {
   const { filesystem, project } = await materializeBridge4Project(t, 'bridge4-vite-config-snapshot-dev');
   await addBridge4ConfigProbe(project);
@@ -571,11 +962,11 @@ test('red: Bridge 4 build keeps the validated config snapshot after a source sym
   }
 });
 
-test('red: Bridge 4 virtual config rejects non-serializable loaded values before Vite starts', async t => {
+test('red: Bridge 4 virtual config rejects non-serializable effective app values before Vite starts', async t => {
   const { filesystem, project } = await materializeBridge4Project(t, 'bridge4-vite-config-serialization');
   const configPath = path.join(project, 'app', 'config', 'dev.js');
   const source = await readFile(configPath, 'utf8');
-  await writeFile(configPath, source.replace('const appConfig = {', 'const appConfig = {\n  unsupportedSnapshotValue: 1n,'));
+  await writeFile(configPath, source.replace('"runtimeConfig": "open-cells-development"', '"unsupportedSnapshotValue": 1n,\n        "runtimeConfig": "open-cells-development"'));
   const session = await WorkspaceSession.open(project, filesystem);
   const captured = {};
   const port = await availablePort();

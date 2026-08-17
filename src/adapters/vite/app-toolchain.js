@@ -30,6 +30,7 @@ const VITE_STAGE_KIND = Object.freeze({ markerName: '.open-cells-academy-vite-st
 const ACADEMY_APP_RECIPE = '.open-cells-academy-recipe.json';
 const BRIDGE4_CONFIG_MODULE = 'virtual:open-cells-app-config';
 const BRIDGE4_CONFIG_MODULE_ID = `\0${BRIDGE4_CONFIG_MODULE}`;
+const BRIDGE4_CONFIG_DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const APP_STAGE_OPTIONS = Object.freeze({
   invalidCode: 'APP_BUILD_SOURCE_INVALID',
   cleanupCode: 'TRANSACTION_CLEANUP_FAILED',
@@ -431,23 +432,115 @@ function isPlainRecord(value) {
   return prototype === Object.prototype || prototype === null;
 }
 
-function serializableSnapshotValue(_key, value) {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'object' && (Array.isArray(value) || isPlainRecord(value))) return value;
+function snapshotFailure() {
   throw typedError('VITE_OPTIONS_INVALID');
 }
 
+function snapshotDataValue(value, key, { requireEnumerable = true } = {}) {
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  if (descriptor === undefined) return Object.freeze({ present: false, value: undefined });
+  if (!Object.hasOwn(descriptor, 'value') || (requireEnumerable && descriptor.enumerable !== true)) snapshotFailure();
+  return Object.freeze({ present: true, value: descriptor.value });
+}
+
+function normalizeSnapshotArray(value, active) {
+  const length = snapshotDataValue(value, 'length', { requireEnumerable: false }).value;
+  if (!Number.isSafeInteger(length) || length < 0) snapshotFailure();
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== length + 1) snapshotFailure();
+  const indices = [];
+  for (const key of keys) {
+    if (key === 'length') continue;
+    if (typeof key !== 'string' || !/^(?:0|[1-9][0-9]*)$/u.test(key) || Number(key) >= length) snapshotFailure();
+    indices.push(Number(key));
+  }
+  indices.sort((left, right) => left - right);
+  const normalized = [];
+  for (let index = 0; index < indices.length; index += 1) {
+    if (indices[index] !== index) snapshotFailure();
+    const entry = snapshotDataValue(value, String(index));
+    if (!entry.present) snapshotFailure();
+    normalized.push(normalizeSnapshotValue(entry.value, active));
+  }
+  return normalized;
+}
+
+function normalizeSnapshotRecord(value, active) {
+  if (!isPlainRecord(value)) snapshotFailure();
+  const normalized = Object.create(null);
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== 'string' || BRIDGE4_CONFIG_DANGEROUS_KEYS.has(key)) snapshotFailure();
+    const entry = snapshotDataValue(value, key);
+    Object.defineProperty(normalized, key, {
+      value: normalizeSnapshotValue(entry.value, active),
+      enumerable: true,
+      configurable: true,
+      writable: true
+    });
+  }
+  return normalized;
+}
+
+function normalizeSnapshotValue(value, active = new WeakSet()) {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (Number.isFinite(value)) return value;
+    snapshotFailure();
+  }
+  if (typeof value !== 'object' || active.has(value)) snapshotFailure();
+  active.add(value);
+  try {
+    return Array.isArray(value)
+      ? normalizeSnapshotArray(value, active)
+      : normalizeSnapshotRecord(value, active);
+  } finally {
+    active.delete(value);
+  }
+}
+
+function normalizedInitialTemplate(value) {
+  if (typeof value !== 'string' || value.length === 0 || value.trim() !== value || value.includes('\u0000') || /[\u0001-\u001f\u007f]/u.test(value)) {
+    snapshotFailure();
+  }
+  return value;
+}
+
+function bridge4ConfigProjection(config) {
+  if (!isPlainRecord(config)) snapshotFailure();
+  const app = snapshotDataValue(config, 'app');
+  const runtime = snapshotDataValue(config, 'runtime');
+  const cellsProperties = {};
+  if (runtime.present && runtime.value !== undefined) {
+    if (!isPlainRecord(runtime.value)) snapshotFailure();
+    for (const key of Reflect.ownKeys(runtime.value)) {
+      if (typeof key !== 'string' || key !== 'initialTemplate') snapshotFailure();
+      const entry = snapshotDataValue(runtime.value, key);
+      cellsProperties.initialTemplate = normalizedInitialTemplate(entry.value);
+    }
+  }
+  return Object.freeze({
+    cells_properties: cellsProperties,
+    app_properties: { app: app.present && app.value !== undefined ? app.value : {} }
+  });
+}
+
 function bridge4ConfigSnapshot(config) {
-  if (!isRecord(config) || !isPlainRecord(config.legacy)) throw typedError('VITE_OPTIONS_INVALID');
   let serialized;
   try {
-    serialized = JSON.stringify(config.legacy, serializableSnapshotValue);
+    const projection = normalizeSnapshotValue(bridge4ConfigProjection(config));
+    serialized = JSON.stringify(projection);
   } catch {
     throw typedError('VITE_OPTIONS_INVALID');
   }
-  if (typeof serialized !== 'string') throw typedError('VITE_OPTIONS_INVALID');
-  return `const appConfig = ${serialized};\nexport default appConfig;\n`;
+  if (typeof serialized !== 'string') snapshotFailure();
+  return `const deepFreeze = value => {
+  if (value === null || typeof value !== 'object') return value;
+  for (const key of Object.keys(value)) deepFreeze(value[key]);
+  return Object.freeze(value);
+};
+const appConfig = deepFreeze(JSON.parse(${JSON.stringify(serialized)}));
+export default appConfig;
+`;
 }
 
 function bridge4ConfigPlugin(source, config) {

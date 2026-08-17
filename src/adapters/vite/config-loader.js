@@ -10,6 +10,7 @@ import { normalizeRelativePath } from '../../domain/path-policy.js';
 import { typedError } from '../../domain/workspace-session.js';
 
 const CONFIG_DIRECTORY = Object.freeze(['app', 'config']);
+const EMPTY_CONFIG = Object.freeze({});
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -17,6 +18,15 @@ function isPlainObject(value) {
   }
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
+}
+
+function ownDataValue(value, key, { requireEnumerable = true } = {}) {
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  if (descriptor === undefined) return Object.freeze({ present: false, value: undefined });
+  if (!Object.hasOwn(descriptor, 'value') || (requireEnumerable && descriptor.enumerable !== true)) {
+    throw new TypeError('Selected config data must not contain accessors or hidden fields');
+  }
+  return Object.freeze({ present: true, value: descriptor.value });
 }
 
 function cloneConfigValue(value, seen = new WeakMap(), active = new WeakSet()) {
@@ -28,10 +38,26 @@ function cloneConfigValue(value, seen = new WeakMap(), active = new WeakSet()) {
     const copy = [];
     seen.set(value, copy);
     active.add(value);
-    for (const item of value) {
-      copy.push(cloneConfigValue(item, seen, active));
+    try {
+      const keys = Reflect.ownKeys(value);
+      const length = ownDataValue(value, 'length', { requireEnumerable: false }).value;
+      if (!Number.isSafeInteger(length) || length < 0 || keys.length !== length + 1) {
+        throw new TypeError('Selected config arrays must contain ordinary data indices');
+      }
+      for (let index = 0; index < length; index += 1) {
+        const descriptor = ownDataValue(value, String(index));
+        if (!descriptor.present) throw new TypeError('Selected config arrays must not be sparse');
+        copy.push(cloneConfigValue(descriptor.value, seen, active));
+      }
+      for (const key of keys) {
+        if (key === 'length') continue;
+        if (typeof key !== 'string' || !/^(?:0|[1-9][0-9]*)$/u.test(key) || Number(key) >= length) {
+          throw new TypeError('Selected config arrays must contain ordinary data indices');
+        }
+      }
+    } finally {
+      active.delete(value);
     }
-    active.delete(value);
     return copy;
   }
   if (value === null || typeof value !== 'object') {
@@ -47,15 +73,20 @@ function cloneConfigValue(value, seen = new WeakMap(), active = new WeakSet()) {
   const copy = {};
   seen.set(value, copy);
   active.add(value);
-  for (const [key, item] of Object.entries(value)) {
-    Object.defineProperty(copy, key, {
-      value: cloneConfigValue(item, seen, active),
-      enumerable: true,
-      configurable: true,
-      writable: true
-    });
+  try {
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key !== 'string') throw new TypeError('Selected config data must not contain symbol keys');
+      const descriptor = ownDataValue(value, key);
+      Object.defineProperty(copy, key, {
+        value: cloneConfigValue(descriptor.value, seen, active),
+        enumerable: true,
+        configurable: true,
+        writable: true
+      });
+    }
+  } finally {
+    active.delete(value);
   }
-  active.delete(value);
   return copy;
 }
 
@@ -67,10 +98,11 @@ function copySelectedObject(value) {
 }
 
 function copyStringList(value) {
-  if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) {
+  const copy = cloneConfigValue(value);
+  if (!Array.isArray(copy) || copy.some(item => typeof item !== 'string')) {
     throw new TypeError('Selected config field must be a string array');
   }
-  return Object.freeze([...value]);
+  return Object.freeze(copy);
 }
 
 function deepFreeze(value, seen = new WeakSet()) {
@@ -78,8 +110,11 @@ function deepFreeze(value, seen = new WeakSet()) {
     return value;
   }
   seen.add(value);
-  for (const item of Object.values(value)) {
-    deepFreeze(item, seen);
+  for (const key of Reflect.ownKeys(value)) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor !== undefined && Object.hasOwn(descriptor, 'value')) {
+      deepFreeze(descriptor.value, seen);
+    }
   }
   return Object.freeze(value);
 }
@@ -125,30 +160,42 @@ function within(parent, candidate) {
   return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
-function selectField(root, academy, legacy, field) {
-  if (Object.hasOwn(academy, field)) {
-    return academy[field];
+function selectField(root, academy, legacy, appProperties, field) {
+  const academyValue = ownDataValue(academy, field);
+  if (academyValue.present) {
+    return academyValue.value;
   }
   if (field === 'app') {
-    if (isPlainObject(root.app_properties)) {
-      return Object.hasOwn(root.app_properties, 'app') ? root.app_properties.app : root.app_properties;
+    if (appProperties !== undefined) {
+      const appValue = ownDataValue(appProperties, 'app');
+      return appValue.present ? appValue.value : appProperties;
     }
-    return root.app === undefined || isPlainObject(root.app) ? root.app : root;
+    const rootApp = ownDataValue(root, 'app');
+    return !rootApp.present || rootApp.value === undefined || isPlainObject(rootApp.value) ? rootApp.value : root;
   }
-  if (Object.hasOwn(legacy, field)) {
-    return legacy[field];
+  const legacyValue = ownDataValue(legacy, field);
+  if (legacyValue.present) {
+    return legacyValue.value;
   }
-  return root[field];
+  return ownDataValue(root, field).value;
 }
 
 function optionalPlainObject(root, field, sourcePath) {
-  if (root[field] === undefined) {
-    return {};
+  const selected = ownDataValue(root, field);
+  if (!selected.present || selected.value === undefined) {
+    return undefined;
   }
-  if (!isPlainObject(root[field])) {
+  if (!isPlainObject(selected.value)) {
     throw invalidConfig(sourcePath);
   }
-  return root[field];
+  return selected.value;
+}
+
+function copyInitialTemplate(value) {
+  if (typeof value !== 'string' || value.length === 0 || value.trim() !== value || value.includes('\u0000') || /[\u0001-\u001f\u007f]/u.test(value)) {
+    throw new TypeError('Selected runtime initial template must be a non-empty string');
+  }
+  return value;
 }
 
 function normalizeConfig(defaultExport, sourcePath, sourceDependencies = Object.freeze([sourcePath])) {
@@ -156,19 +203,21 @@ function normalizeConfig(defaultExport, sourcePath, sourceDependencies = Object.
     if (!isPlainObject(defaultExport)) {
       throw invalidConfig(sourcePath);
     }
-    const academy = optionalPlainObject(defaultExport, 'academy', sourcePath);
-    const legacy = optionalPlainObject(defaultExport, 'cells_properties', sourcePath);
-    optionalPlainObject(defaultExport, 'app_properties', sourcePath);
-    const server = selectField(defaultExport, academy, legacy, 'server');
-    const app = selectField(defaultExport, academy, legacy, 'app');
-    const locales = selectField(defaultExport, academy, legacy, 'locales');
-    const build = selectField(defaultExport, academy, legacy, 'build');
-    const appModules = selectField(defaultExport, academy, legacy, 'appModules');
+    const academy = optionalPlainObject(defaultExport, 'academy', sourcePath) ?? EMPTY_CONFIG;
+    const legacy = optionalPlainObject(defaultExport, 'cells_properties', sourcePath) ?? EMPTY_CONFIG;
+    const appProperties = optionalPlainObject(defaultExport, 'app_properties', sourcePath);
+    const server = selectField(defaultExport, academy, legacy, appProperties, 'server');
+    const app = selectField(defaultExport, academy, legacy, appProperties, 'app');
+    const locales = selectField(defaultExport, academy, legacy, appProperties, 'locales');
+    const build = selectField(defaultExport, academy, legacy, appProperties, 'build');
+    const appModules = selectField(defaultExport, academy, legacy, appProperties, 'appModules');
+    const initialTemplate = selectField(defaultExport, academy, legacy, appProperties, 'initialTemplate');
     const normalizedServer = server === undefined ? undefined : copySelectedObject(server);
     const normalizedApp = app === undefined ? undefined : copySelectedObject(app);
     const normalizedLocales = locales === undefined ? undefined : copySelectedObject(locales);
     const normalizedBuild = build === undefined ? undefined : copySelectedObject(build);
     const normalizedPreview = normalizedServer === undefined ? undefined : cloneConfigValue(normalizedServer);
+    const normalizedRuntime = initialTemplate === undefined ? undefined : { initialTemplate: copyInitialTemplate(initialTemplate) };
     const record = { sourcePath, sourceDependencies: Object.freeze([...sourceDependencies]), legacy: cloneConfigValue(defaultExport) };
     if (normalizedServer !== undefined) {
       record.server = normalizedServer;
@@ -183,13 +232,18 @@ function normalizeConfig(defaultExport, sourcePath, sourceDependencies = Object.
     if (normalizedBuild !== undefined) {
       record.build = normalizedBuild;
     }
+    if (normalizedRuntime !== undefined) {
+      record.runtime = normalizedRuntime;
+    }
     if (appModules !== undefined) {
       record.appModules = copyStringList(appModules);
     }
-    if (Object.hasOwn(defaultExport, 'serviceWorker')) {
-      record.serviceWorker = copySelectedObject(defaultExport.serviceWorker);
-    } else if (Object.hasOwn(defaultExport, 'enable_sw')) {
-      record.enable_sw = cloneConfigValue(defaultExport.enable_sw);
+    const serviceWorker = ownDataValue(defaultExport, 'serviceWorker');
+    const enableServiceWorker = ownDataValue(defaultExport, 'enable_sw');
+    if (serviceWorker.present) {
+      record.serviceWorker = copySelectedObject(serviceWorker.value);
+    } else if (enableServiceWorker.present) {
+      record.enable_sw = cloneConfigValue(enableServiceWorker.value);
     }
     return deepFreeze(record);
   } catch (cause) {

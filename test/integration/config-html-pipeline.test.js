@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, symlink, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, utimes, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -224,6 +224,40 @@ test('break: Academy config fields take precedence over legacy and root fields',
   assert.deepEqual(config.server, { port: 3333 });
   assert.deepEqual(config.app, { name: 'academy-app' });
   assert.deepEqual(config.locales, { source: 'academy' });
+});
+
+test('red: config normalizes the highest-priority runtime initial template independently from raw config', async t => {
+  const { root, session } = await fixture(t);
+  await writeConfig(
+    root,
+    'runtime-template.js',
+    "export default { academy: { initialTemplate: 'academy-template', app: { name: 'academy-app' } }, cells_properties: { initialTemplate: 'legacy-template' }, initialTemplate: 'root-template' };"
+  );
+
+  const config = await loadCellsConfig(session, 'runtime-template.js');
+
+  assert.deepEqual(config.runtime, { initialTemplate: 'academy-template' });
+  assert.equal(Object.isFrozen(config.runtime), true);
+});
+
+test('red: config rejects an empty normalized runtime initial template', async t => {
+  const { root, session } = await fixture(t);
+  await writeConfig(root, 'empty-runtime-template.js', "export default { initialTemplate: '   ', app: { name: 'root-app' } };");
+
+  await assertConfigCode(loadCellsConfig(session, 'empty-runtime-template.js'), 'app/config/empty-runtime-template.js');
+});
+
+test('red: config rejects app accessors without evaluating them', async t => {
+  const { root, session } = await fixture(t, { moduleType: false });
+  const marker = path.join(root, 'app', 'config', 'accessor-read.txt');
+  await writeConfig(
+    root,
+    'accessor.js',
+    "const { writeFileSync } = require('node:fs'); const { join } = require('node:path'); const app = {}; Object.defineProperty(app, 'runtimeConfig', { enumerable: true, get() { writeFileSync(join(__dirname, 'accessor-read.txt'), 'read'); return 'unexpected'; } }); module.exports = { initialTemplate: 'catalog', app };"
+  );
+
+  await assertConfigCode(loadCellsConfig(session, 'accessor.js'), 'app/config/accessor.js');
+  await assert.rejects(readFile(marker, 'utf8'), error => error?.code === 'ENOENT');
 });
 
 test('break: config preserves the highest-priority build object as an independent deep-frozen value', async t => {
