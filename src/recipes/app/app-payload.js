@@ -1,6 +1,7 @@
 import { ScaffoldPlan } from '../../domain/scaffold-plan.js';
 import { typedError } from '../../domain/workspace-session.js';
 import { applicationProfilePayloads } from '../../../templates/apps/profile-payloads.js';
+import { createBridge3ApplicationPayload } from './bridge3-app-payload.js';
 import { createBridge4ApplicationPayload } from './bridge4-app-payload.js';
 
 function stableJson(value) {
@@ -1006,6 +1007,9 @@ ${payload.routes.at(-2)?.name !== first.name ? `  await expectActiveRouteFocus(p
 }
 
 export function createApplicationPayload(profile, options = {}) {
+  if (options?.cellsVersion === '4') {
+    return createBridge3ApplicationPayload(profile, options);
+  }
   if (options?.cellsVersion === '5') {
     return createBridge4ApplicationPayload(profile, options);
   }

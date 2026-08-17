@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { createServer as createNetServer } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -12,6 +13,7 @@ import { devApp } from '../../src/application/app/dev-app.js';
 import { NodeFilesystem } from '../../src/adapters/node/node-filesystem.js';
 import { SassCompiler } from '../../src/adapters/sass/sass-compiler.js';
 import { WorkspaceSession } from '../../src/domain/workspace-session.js';
+import { composeRecipe } from '../../src/recipes/compose-recipe.js';
 
 async function write(root, relative, content) {
   const target = path.join(root, relative);
@@ -71,6 +73,24 @@ async function fixture(t, { preparedDist = true } = {}) {
   }
   const session = await WorkspaceSession.open(root, new NodeFilesystem());
   return { root, session };
+}
+
+async function bridge3Fixture(t) {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'open-cells-bridge3-serve-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await write(root, 'package.json', '{"name":"bridge3-serve-owner","private":true,"type":"module"}\n');
+  const filesystem = new NodeFilesystem();
+  const owner = await WorkspaceSession.open(root, filesystem);
+  const publication = await filesystem.applyPlanAtomically(owner, composeRecipe('web-app', {
+    kind: 'app',
+    name: 'bridge3-serve-learning-app',
+    cellsVersion: '4'
+  }), 'bridge3-serve-learning-app');
+  return Object.freeze({
+    filesystem,
+    project: publication.destination,
+    session: await WorkspaceSession.open(publication.destination, filesystem)
+  });
 }
 
 test('integration: legacy app:serve builds a fresh development dist before listening', async t => {
@@ -202,6 +222,67 @@ test('integration: legacy app:serve rebuilds generated development output after 
   })());
   assert.equal((await fetch(ready.url)).status, 200);
   assert.equal((await handle.ready).port, ready.port);
+});
+
+test('integration: a generated Bridge 3 application serves, rebuilds, and preserves its last dist on a Composer failure', async t => {
+  const { filesystem, project, session } = await bridge3Fixture(t);
+  let handle;
+  t.after(async () => handle?.close());
+
+  handle = await devApp(Object.freeze({
+    session,
+    filesystem,
+    compiler: new SassCompiler(sass),
+    toolchain: new AppToolchain(vite),
+    configName: 'dev.js',
+    runtime: 'legacy-dist',
+    options: Object.freeze({ host: '127.0.0.1', port: 0, strictPort: true, open: false })
+  }));
+  const ready = await handle.ready;
+  const index = await readFile(path.join(project, 'dist', 'index.html'), 'utf8');
+  const bootstrap = await readFile(path.join(project, 'dist', 'scripts', 'app-bootstrap.js'), 'utf8');
+  const initialImports = await readFile(path.join(project, 'dist', 'bower_components', 'initial-components.html'), 'utf8');
+  const deferredImports = await readFile(path.join(project, 'dist', 'bower_components', 'app-components.html'), 'utf8');
+  const composer = JSON.parse(await readFile(path.join(project, 'dist', 'composerMocks', 'catalog.json'), 'utf8'));
+  const locales = JSON.parse(await readFile(path.join(project, 'dist', 'locales', 'en.json'), 'utf8'));
+  const css = await readFile(path.join(project, 'dist', 'styles', 'main.css'), 'utf8');
+  const response = await fetch(ready.url);
+
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /data-open-cells-route="catalog"/u);
+  assert.match(index, /Open Cells learning catalog/u);
+  assert.match(bootstrap, /"composerEndpoint":"composerMocks"/u);
+  assert.equal(composer.template.tag, 'academy-learning-shell');
+  assert.match(initialImports, /academy-learning-shell\/academy-learning-shell\.html/u);
+  assert.match(deferredImports, /academy-lesson-page\/academy-lesson-page\.html/u);
+  assert.equal(locales['catalog.title'], 'Open Cells learning catalog');
+  assert.match(css, /color:\s*#1e293b/u);
+
+  const lesson = path.join(project, 'app', 'pages', 'lesson-page', 'lesson-page.js');
+  const originalLesson = await readFile(lesson, 'utf8');
+  await new Promise(resolve => setTimeout(resolve, 100));
+  await writeFile(lesson, originalLesson.replace('Latest progress:', 'Rebuilt progress:'));
+  await within(5_000, 'Bridge 3 page rebuild', (async () => {
+    while (true) {
+      const rebuilt = await readFile(path.join(project, 'dist', 'pages', 'lesson-page', 'lesson-page.js'), 'utf8');
+      if (rebuilt.includes('Rebuilt progress:')) return;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+  })());
+
+  const stableIndex = await readFile(path.join(project, 'dist', 'index.html'), 'utf8');
+  await writeFile(path.join(project, 'app', 'composerMocksTpl', 'catalog.js'), 'module.exports = () => { throw new Error("Composer rebuild failure"); };\n');
+  await new Promise(resolve => setTimeout(resolve, 350));
+  assert.equal(await readFile(path.join(project, 'dist', 'index.html'), 'utf8'), stableIndex);
+
+  await handle.close();
+  handle = undefined;
+  const probe = await new Promise((resolve, reject) => {
+    const server = createNetServer();
+    server.once('error', reject);
+    server.listen(ready.port, '127.0.0.1', () => resolve(server));
+  });
+  await new Promise((resolve, reject) => probe.close(error => error === undefined ? resolve() : reject(error)));
 });
 
 test('integration: closing legacy serve cancels an active composer rebuild', async t => {

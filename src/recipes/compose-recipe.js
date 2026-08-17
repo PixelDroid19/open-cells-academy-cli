@@ -65,16 +65,28 @@ function packageMetadata(options, dependencies) {
   }
   if (options.kind === 'app') {
     const bridge4 = options.cellsVersion === '5';
-    metadata.scripts = {
-      'academy:version': 'cells --version',
-      build: bridge4 ? 'cells app:build -c prod.js' : 'vite build',
-      dev: bridge4 ? 'cells app:dev -c dev.js' : 'vite',
-      lint: 'node scripts/validate-source.js',
-      locales: 'node scripts/validate-locales.js',
-      preview: bridge4 ? 'cells app:preview -c prod.js' : 'vite preview',
-      test: 'vitest run',
-      'test:a11y': bridge4 ? 'vitest run test/unit' : 'vitest run test/app-accessibility.test.js'
-    };
+    metadata.scripts = bridge4
+      ? {
+          'academy:version': 'cells --version',
+          build: 'cells app:build -c prod.js',
+          dev: 'cells app:dev -c dev.js',
+          lint: 'node scripts/validate-source.js',
+          locales: 'node scripts/validate-locales.js',
+          preview: 'cells app:preview -c prod.js',
+          test: 'vitest run',
+          'test:a11y': 'vitest run test/unit'
+        }
+      : {
+          'academy:version': 'cells --version',
+          build: 'vite build',
+          'cells:build': 'cells app:build -c prod.js',
+          dev: 'vite',
+          lint: 'cells app:lint',
+          locales: 'cells app:locales -c dev.js',
+          preview: 'vite preview',
+          serve: 'cells app:serve -c dev.js',
+          test: 'cells app:test'
+        };
     if (options.e2e) metadata.scripts.e2e = 'playwright test';
   }
   if (options.kind === 'component') {
@@ -113,14 +125,15 @@ function structuralFiles(options, capabilities, dependencies) {
     declaration.componentBase = options.componentBase;
   }
   const bridge4Application = options.kind === 'app' && options.cellsVersion === '5';
+  const bridge3Application = options.kind === 'app' && options.cellsVersion === '4';
   let plan = ScaffoldPlan.empty()
     .addDirectory('tools')
     .addFile('.open-cells-academy-recipe.json', stableJson(declaration))
     .addFile('package.json', stableJson(packageMetadata(options, dependencies)));
-  if (!bridge4Application) {
+  if (!bridge4Application && !bridge3Application) {
     plan = plan.addFile('README.md', options.kind === 'component' ? componentReadme() : applicationReadme());
   }
-  if (options.kind === 'app' && !bridge4Application) {
+  if (options.kind === 'app' && !bridge4Application && !bridge3Application) {
     plan = plan
       .addFile('scripts/validate-source.js', `import { readdir, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -174,13 +187,16 @@ export function composeRecipe(profile, input = {}) {
   }
   const declared = Object.freeze({ ...options, profile });
   let contribution = ScaffoldPlan.empty();
-  for (const capability of capabilities) {
-    contribution = contribution.merge(createCapability(capability, declared));
+  if (!(declared.kind === 'app' && declared.cellsVersion === '4')) {
+    for (const capability of capabilities) {
+      contribution = contribution.merge(createCapability(capability, declared));
+    }
   }
   const profilePayload = declared.kind === 'app'
     ? createApplicationPayload(profile, declared)
     : declared.kind === 'component'
       ? createComponentPayload(declared)
       : ScaffoldPlan.empty();
-  return structuralFiles(declared, capabilities, contribution.dependencies).merge(contribution).merge(profilePayload);
+  const dependencies = [...contribution.dependencies, ...profilePayload.dependencies];
+  return structuralFiles(declared, capabilities, dependencies).merge(contribution).merge(profilePayload);
 }
