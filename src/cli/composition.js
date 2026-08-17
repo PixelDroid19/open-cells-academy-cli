@@ -29,6 +29,7 @@ import { BrowserCapability } from '../adapters/testing/browser-capability.js';
 import { ChromiumProbe } from '../adapters/testing/chromium-probe.js';
 import { VitestBrowserRunner } from '../adapters/testing/vitest-browser-runner.js';
 import { WtrRunner } from '../adapters/testing/wtr-runner.js';
+import { bridge3HappyDomVitestConfigSource } from '../../templates/apps/bridge3/bridge3-sources.js';
 
 import { createApp } from '../application/app/create-app.js';
 import { buildApp } from '../application/app/build-app.js';
@@ -277,8 +278,7 @@ async function isGeneratedBridge3HappyDomVitestProject(sessionRoot, runnerName, 
       isRecord(devDependencies) &&
       typeof devDependencies.vitest === 'string' &&
       typeof devDependencies['happy-dom'] === 'string' &&
-      configSource.includes("environment: 'happy-dom'") &&
-      configSource.includes("include: ['test/unit/**/*.test.js']")
+      configSource === bridge3HappyDomVitestConfigSource
     );
   } catch {
     return false;

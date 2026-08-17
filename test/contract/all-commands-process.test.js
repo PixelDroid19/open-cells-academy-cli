@@ -8,6 +8,7 @@ import test from 'node:test';
 import { createCli } from '../../bin/cells.js';
 import { createCommandRegistry } from '../../src/cli/command-registry.js';
 import { resolveDispatch } from '../../src/cli/composition.js';
+import { bridge3HappyDomVitestConfigSource } from '../../templates/apps/bridge3/bridge3-sources.js';
 import { createFakeToolApi } from '../fixtures/task-13-composition/fake-tools.js';
 
 const require = createRequire(import.meta.url);
@@ -163,7 +164,7 @@ test('contract: only the generated CLI 4 Happy DOM Vitest shape skips Chromium w
     scripts: { test: 'cells app:test' },
     devDependencies: { vitest: '^3.2.4', 'happy-dom': '^20.11.2' }
   }, null, 2));
-  await writeFile(path.join(root, 'vitest.config.js'), "export default { test: { environment: 'happy-dom', include: ['test/unit/**/*.test.js'] } };\n");
+  await writeFile(path.join(root, 'vitest.config.js'), bridge3HappyDomVitestConfigSource);
   await mkdir(path.join(root, 'test', 'unit'), { recursive: true });
   await writeFile(path.join(root, 'test', 'unit', 'runtime.test.js'), 'test("runs", () => {});\n');
 
@@ -172,6 +173,20 @@ test('contract: only the generated CLI 4 Happy DOM Vitest shape skips Chromium w
   const happyDom = await cli.run(['app:test'], { env: {} });
   assert.equal(happyDom.exitCode, 0, happyDom.stderr);
   assert.equal(browserChecks, 0);
+  assert.equal(api.testingRuns, 1);
+
+  await writeFile(path.join(root, 'vitest.config.js'), `import { defineConfig } from '@playwright/test';
+
+// environment: 'happy-dom'
+// include: ['test/unit/**/*.test.js']
+export default defineConfig({
+  use: { channel: 'chromium' }
+});
+`);
+  const playwrightSpoof = await cli.run(['app:test'], { env: {} });
+  assert.equal(playwrightSpoof.exitCode, 1);
+  assert.match(playwrightSpoof.stderr, /Chromium is not available/u);
+  assert.equal(browserChecks, 1);
   assert.equal(api.testingRuns, 1);
 
   await writeFile(path.join(root, '.open-cells-academy-recipe.json'), JSON.stringify({
@@ -185,13 +200,13 @@ test('contract: only the generated CLI 4 Happy DOM Vitest shape skips Chromium w
   const malformedBridge3 = await cli.run(['app:test'], { env: {} });
   assert.equal(malformedBridge3.exitCode, 1);
   assert.match(malformedBridge3.stderr, /Chromium is not available/u);
-  assert.equal(browserChecks, 1);
+  assert.equal(browserChecks, 2);
   assert.equal(api.testingRuns, 1);
 
   const wtr = await cli.run(['app:test', '--wtr'], { env: {} });
   assert.equal(wtr.exitCode, 1);
   assert.match(wtr.stderr, /Chromium is not available/u);
-  assert.equal(browserChecks, 2);
+  assert.equal(browserChecks, 3);
   assert.equal(api.testingRuns, 1);
 
   await writeFile(path.join(root, '.open-cells-academy-recipe.json'), JSON.stringify({
@@ -205,7 +220,7 @@ test('contract: only the generated CLI 4 Happy DOM Vitest shape skips Chromium w
   const bridge4 = await cli.run(['app:test'], { env: {} });
   assert.equal(bridge4.exitCode, 1);
   assert.match(bridge4.stderr, /Chromium is not available/u);
-  assert.equal(browserChecks, 3);
+  assert.equal(browserChecks, 4);
   assert.equal(api.testingRuns, 1);
 });
 

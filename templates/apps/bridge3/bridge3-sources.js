@@ -826,8 +826,7 @@ test('keeps Composer, locale, and profile inputs in the development config', () 
 `;
 }
 
-function vitestConfigSource() {
-  return `import { defineConfig } from 'vitest/config';
+export const bridge3HappyDomVitestConfigSource = `import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
@@ -836,7 +835,6 @@ export default defineConfig({
   }
 });
 `;
-}
 
 function sourceValidationSource() {
   return `import { readdir, readFile } from 'node:fs/promises';
@@ -979,7 +977,7 @@ export function createBridge3Sources(profile, name, { e2e = false } = {}) {
     'test/unit/locales.test.js': localesTestSource(),
     'test/unit/routes.test.js': routesTestSource(),
     'test/unit/runtime.test.js': runtimeTestSource(profile),
-    'vitest.config.js': vitestConfigSource()
+    'vitest.config.js': bridge3HappyDomVitestConfigSource
   };
   if (feature.useLocalLessons) sources['app/data-managers/local-lesson-data.js'] = localLessonDataSource();
   if (e2e) {
