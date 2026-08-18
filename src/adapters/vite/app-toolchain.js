@@ -948,7 +948,17 @@ export class AppToolchain {
     assertSession(request.session);
     const legacyTemplate = await status(path.join(request.session.root, 'app', 'tpls', 'index.tpl'));
     const legacySourceIndex = await status(path.join(request.session.root, 'app', 'index.html'));
-    if (legacyTemplate !== undefined && legacySourceIndex === undefined) {
+    const academyRootIndex = await status(path.join(request.session.root, 'index.html'));
+    const academyMarker = await status(path.join(request.session.root, ACADEMY_APP_RECIPE));
+    let academyRoot = false;
+    if (academyMarker?.isFile() && !academyMarker.isSymbolicLink()) {
+      try {
+        academyRoot = academyRootIndex?.isFile() === true && isAcademyAppRecipe(await readFile(path.join(request.session.root, ACADEMY_APP_RECIPE), 'utf8'));
+      } catch {
+        academyRoot = false;
+      }
+    }
+    if (legacyTemplate !== undefined && legacySourceIndex === undefined && !academyRoot) {
       if (!legacyTemplate.isFile() || legacyTemplate.isSymbolicLink()) throw typedError('APP_BUILD_SOURCE_INVALID');
       return buildLegacyDevelopDist(Object.freeze({
         session: request.session,

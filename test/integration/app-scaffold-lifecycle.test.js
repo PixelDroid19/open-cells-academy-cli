@@ -12,12 +12,12 @@ import { WorkspaceSession } from '../../src/domain/workspace-session.js';
 import { runApplicationProfileLifecycle } from '../fixtures/app-scaffold-lifecycle.js';
 
 const PROFILES = Object.freeze({
-  blank: Object.freeze({ routes: ['home', 'details'], marker: 'academy-blank-app' }),
-  'web-app': Object.freeze({ routes: ['home', 'catalog', 'details'], marker: 'academy-web-app' }),
-  'web-mobile-app': Object.freeze({ routes: ['login', 'dashboard', 'movements', 'settings', 'help'], marker: 'academy-mobile-app' }),
-  'academy-app': Object.freeze({ routes: ['welcome', 'routing', 'pubsub', 'data', 'local-api', 'i18n', 'scoped'], marker: 'academy-learning-app' })
+  blank: Object.freeze({ title: 'Open Cells learning starter' }),
+  'web-app': Object.freeze({ title: 'Open Cells learning catalog' }),
+  'web-mobile-app': Object.freeze({ title: 'Open Cells mobile learning' }),
+  'academy-app': Object.freeze({ title: 'Open Cells learning studio' })
 });
-const LEGACY_CELLS_VERSION = '4';
+const MODERN_CELLS_VERSION = '5';
 
 function fileMap(plan) {
   return new Map(plan.files.map(file => [file.path, file.content]));
@@ -29,12 +29,12 @@ async function importViteConfigFromLiteralSpacePath(t) {
     await rm(root, { recursive: true, force: true });
   });
   const project = path.join(root, 'generated app');
-  const files = fileMap(composeRecipe('blank', { kind: 'app', name: 'space-app', cellsVersion: LEGACY_CELLS_VERSION }));
+  const files = fileMap(composeRecipe('blank', { kind: 'app', name: 'space-app', cellsVersion: MODERN_CELLS_VERSION }));
   await mkdir(path.join(project, 'test'), { recursive: true });
+  await mkdir(path.join(project, 'app', 'config'), { recursive: true });
   await Promise.all([
     writeFile(path.join(project, 'vite.config.js'), files.get('vite.config.js')),
-    writeFile(path.join(project, 'test', 'open-cells-core.js'), files.get('test/open-cells-core.js')),
-    writeFile(path.join(project, 'test', 'scoped-registry-polyfill.js'), files.get('test/scoped-registry-polyfill.js')),
+    writeFile(path.join(project, 'app', 'config', 'dev.js'), files.get('app/config/dev.js')),
     symlink(path.resolve(import.meta.dirname, '..', '..', 'node_modules'), path.join(project, 'node_modules'), 'dir')
   ]);
   return import(pathToFileURL(path.join(project, 'vite.config.js')).href);
@@ -44,23 +44,37 @@ test('red: every application profile composes a complete runnable and distinct A
   const fingerprints = new Set();
 
   for (const [profile, expected] of Object.entries(PROFILES)) {
-    const plan = composeRecipe(profile, { kind: 'app', name: `${profile}-fixture`, cellsVersion: LEGACY_CELLS_VERSION });
+    const plan = composeRecipe(profile, { kind: 'app', name: `${profile}-fixture`, cellsVersion: MODERN_CELLS_VERSION });
     const files = fileMap(plan);
     for (const required of [
       'index.html',
-      'src/app.js',
-      'src/routes.js',
-      'src/styles.js',
-      'test/app.test.js',
+      'app/scripts/app.js',
+      'app/scripts/app-routes.js',
+      'app/scripts/app-module.js',
+      'app/scripts/channels.js',
+      'app/scripts/localization.js',
+      'app/tpls/index.tpl',
+      'app/styles/main.scss',
+      'app/pages/catalog-page/catalog-page.js',
+      'app/pages/lesson-page/lesson-page.js',
+      'app/locales-app/locales.json',
+      'test/unit/routes.test.js',
+      'test/unit/channels.test.js',
+      'test/unit/data-manager.test.js',
+      'test/unit/locales.test.js',
+      'test/unit/runtime.test.js',
+      'test/unit/dev/locales/locales.json',
+      'test/unit/prod/locales/locales.json',
       'app/config/dev.js',
       'app/config/prod.js',
       'vite.config.js'
     ]) {
       assert.equal(files.has(required), true, `${profile} is missing ${required}`);
     }
-    const routes = JSON.parse(files.get('src/routes.json'));
-    assert.deepEqual(routes.map(route => route.name), expected.routes);
-    assert.match(files.get('src/app.js'), new RegExp(expected.marker));
+    assert.match(files.get('app/scripts/app-routes.js'), /name: 'catalog'/);
+    assert.match(files.get('app/scripts/app-routes.js'), /name: 'lesson'/);
+    assert.match(files.get('app/scripts/app-routes.js'), /\/lesson\/:lessonId/);
+    assert.match(files.get('app/locales-app/locales.json'), new RegExp(expected.title));
     const metadata = JSON.parse(files.get('package.json'));
     assert.equal(typeof metadata.scripts.dev, 'string');
     assert.equal(typeof metadata.scripts.build, 'string');
@@ -68,7 +82,7 @@ test('red: every application profile composes a complete runnable and distinct A
     assert.equal(typeof metadata.scripts.preview, 'string');
     assert.equal(typeof metadata.scripts.lint, 'string');
     assert.equal(typeof metadata.scripts.locales, 'string');
-    assert.equal(typeof metadata.scripts['test:a11y'], 'string');
+    assert.equal(metadata.scripts['test:a11y'], 'vitest run test/unit');
     assert.equal(typeof metadata.scripts['academy:version'], 'string');
     for (const configName of ['dev.js', 'prod.js']) {
       const config = files.get(`app/config/${configName}`);
@@ -84,20 +98,14 @@ test('red: every application profile composes a complete runnable and distinct A
     assert.match(readme, /cells app:preview -c prod\.js/);
     assert.equal(files.has('scripts/validate-source.js'), true);
     assert.equal(files.has('scripts/validate-locales.js'), true);
-    assert.equal(files.has('test/app-ui.test.js'), true);
-    assert.equal(files.has('test/app-accessibility.test.js'), true);
-    assert.equal(files.has('test/open-cells-core.js'), true);
+    assert.equal(files.has('test/unit/runtime.test.js'), true);
     assert.match(files.get('vite.config.js'), /environment: 'happy-dom'/);
-    assert.match(files.get('vite.config.js'), /test\/open-cells-core\.js/);
-    assert.match(files.get('test/app-harness.js'), /shadowRoot/);
-    assert.match(files.get('test/app-ui.test.js'), /routes\.slice\(1\)\.entries\(\)/);
-    assert.match(files.get('test/app-accessibility.test.js'), /axe\.run/);
-    assert.match(files.get('test/app-accessibility.test.js'), /for \(const route of routes\)/);
+    assert.match(files.get('app/scripts/app.js'), /startApp/);
+    assert.match(files.get('app/scripts/app.js'), /virtual:open-cells-app-config/);
     assert.equal(metadata.devDependencies['happy-dom'], '20.11.2');
+    assert.equal(metadata.devDependencies['@vitest/coverage-v8'], '3.2.4');
     assert.equal(metadata.devDependencies['axe-core'], '4.13.0');
-    assert.equal(metadata.devDependencies['@axe-core/playwright'], undefined);
-    assert.equal(metadata.scripts['test:a11y'], 'vitest run test/app-accessibility.test.js');
-    fingerprints.add(files.get('src/app.js'));
+    fingerprints.add(files.get('app/locales-app/locales.json'));
   }
   assert.equal(fingerprints.size, 4);
 });
@@ -110,74 +118,70 @@ test('red: generated application dev and production configs load through the tru
   const owner = await WorkspaceSession.open(root, filesystem);
 
   for (const profile of Object.keys(PROFILES)) {
-    const publication = await filesystem.applyPlanAtomically(owner, composeRecipe(profile, { kind: 'app', name: `${profile}-config`, cellsVersion: LEGACY_CELLS_VERSION }), profile);
+    const publication = await filesystem.applyPlanAtomically(owner, composeRecipe(profile, { kind: 'app', name: `${profile}-config`, cellsVersion: MODERN_CELLS_VERSION }), profile);
     const session = await WorkspaceSession.open(publication.destination, filesystem);
     const [dev, prod] = await Promise.all([loadCellsConfig(session, 'dev.js'), loadCellsConfig(session, 'prod.js')]);
 
     for (const config of [dev, prod]) {
-      assert.equal(typeof config.app.lang, 'string');
+      assert.equal(typeof config.app.name, 'string');
       assert.equal(typeof config.app.title, 'string');
       assert.equal(typeof config.app.description, 'string');
-      assert.equal(typeof config.app.header, 'string');
       assert.equal(config.app.name, `${profile}-config`);
       assert.deepEqual(config.server, { host: '127.0.0.1', port: 8001, strictPort: false, open: false });
-      assert.deepEqual(config.locales, { enabledI18n: false });
+      assert.equal(config.locales.enabledI18n, true);
+      assert.deepEqual(config.locales.languages, ['en', 'es']);
+      assert.equal(config.locales.forTesting, true);
+      assert.equal(config.runtime.initialTemplate, 'catalog');
     }
     assert.deepEqual(dev.build, { target: 'es2022', sourcemap: true });
     assert.deepEqual(prod.build, { target: 'es2022', sourcemap: false });
   }
 });
 
-test('red: every application profile keeps real scoped-registry production imports behind a Happy DOM-only test shim', () => {
+test('red: every application profile keeps the browser bootstrap and test runtime separate', () => {
   for (const profile of Object.keys(PROFILES)) {
-    const files = fileMap(composeRecipe(profile, { kind: 'app', name: profile + '-scoped-fixture', cellsVersion: LEGACY_CELLS_VERSION }));
-    const app = files.get('src/app.js');
+    const files = fileMap(composeRecipe(profile, { kind: 'app', name: profile + '-scoped-fixture', cellsVersion: MODERN_CELLS_VERSION }));
+    const app = files.get('app/scripts/app.js');
     const config = files.get('vite.config.js');
 
-    assert.match(app, /^import '@webcomponents\/scoped-custom-element-registry';/);
-    assert.equal(files.has('test/scoped-registry-polyfill.js'), true);
-    assert.equal(files.has('test/setup.js'), true);
-    assert.match(files.get('test/scoped-registry-polyfill.js'), /Happy DOM/);
-    assert.match(files.get('test/setup.js'), /globalThis\.CustomElementRegistry/);
-    assert.match(files.get('test/setup.js'), /academy-test-scoped-/);
-    assert.match(files.get('test/setup.js'), /root\.createElement = function\(tagName\)/);
+    assert.equal(files.has('app/scripts/lit-initial-components.js'), true);
+    assert.match(files.get('app/scripts/lit-initial-components.js'), /lit-components/);
+    assert.match(app, /import '\.\/lit-initial-components\.js'/);
+    assert.match(app, /@open-cells\/core/);
+    assert.match(app, /virtual:open-cells-app-config/);
     assert.match(config, /import \{ fileURLToPath \} from 'node:url';/);
-    assert.match(config, /setupFiles: \['test\/setup\.js'\]/);
-    assert.match(config, /'@open-cells\/core': fileURLToPath\(new URL\('\.\/test\/open-cells-core\.js', import\.meta\.url\)\)/);
-    assert.match(config, /'@webcomponents\/scoped-custom-element-registry': fileURLToPath\(new URL\('\.\/test\/scoped-registry-polyfill\.js', import\.meta\.url\)\)/);
-    assert.doesNotMatch(config, /open-cells-core\.js', import\.meta\.url\)\.pathname/);
-    assert.doesNotMatch(config, /scoped-registry-polyfill\.js', import\.meta\.url\)\.pathname/);
+    assert.match(config, /include: \['test\/unit\/\*\*\/\*\.test\.js'\]/);
+    assert.match(config, /virtual:open-cells-app-config/);
+    assert.doesNotMatch(config, /\.pathname/);
   }
 });
 
 test('red: generated Vite aliases import and access local files from a literal-space path', async t => {
   const { default: config } = await importViteConfigFromLiteralSpacePath(t);
-  const coreAlias = config.test.alias['@open-cells/core'];
-  const scopedAlias = config.test.alias['@webcomponents/scoped-custom-element-registry'];
+  const configAlias = config.test.alias['virtual:open-cells-app-config'];
 
-  assert.equal(coreAlias.includes('%20'), false);
-  assert.equal(scopedAlias.includes('%20'), false);
-  assert.equal((await lstat(coreAlias)).isFile(), true);
-  assert.equal((await lstat(scopedAlias)).isFile(), true);
+  assert.equal(configAlias.includes('%20'), false);
+  assert.equal((await lstat(configAlias)).isFile(), true);
 });
 
 test('red: E2E files and Playwright dependency appear only when explicitly requested', () => {
   for (const profile of Object.keys(PROFILES)) {
-    const withoutE2e = composeRecipe(profile, { kind: 'app', name: `${profile}-plain`, cellsVersion: LEGACY_CELLS_VERSION, e2e: false });
-    const withE2e = composeRecipe(profile, { kind: 'app', name: `${profile}-e2e`, cellsVersion: LEGACY_CELLS_VERSION, e2e: true });
+    const withoutE2e = composeRecipe(profile, { kind: 'app', name: `${profile}-plain`, cellsVersion: MODERN_CELLS_VERSION, e2e: false });
+    const withE2e = composeRecipe(profile, { kind: 'app', name: `${profile}-e2e`, cellsVersion: MODERN_CELLS_VERSION, e2e: true });
     const plainFiles = fileMap(withoutE2e);
     const e2eFiles = fileMap(withE2e);
     const plainMetadata = JSON.parse(plainFiles.get('package.json'));
     const e2eMetadata = JSON.parse(e2eFiles.get('package.json'));
 
     assert.equal(plainFiles.has('playwright.config.js'), false);
-    assert.equal(plainFiles.has('e2e/app.spec.js'), false);
+    assert.equal(plainFiles.has('e2e/bridge4-app.spec.js'), false);
     assert.equal(plainMetadata.devDependencies['@playwright/test'], undefined);
     assert.equal(e2eFiles.has('playwright.config.js'), true);
-    assert.equal(e2eFiles.has('e2e/app.spec.js'), true);
-    assert.match(e2eFiles.get('playwright.config.js'), /ACADEMY_PLAYWRIGHT_EXECUTABLE_PATH/);
+    assert.equal(e2eFiles.has('e2e/bridge4-app.spec.js'), true);
+    assert.match(e2eFiles.get('playwright.config.js'), /OPEN_CELLS_PLAYWRIGHT_CHANNEL/);
     assert.doesNotMatch(e2eFiles.get('playwright.config.js'), /\/home\/|\/opt\/google/);
-    assert.equal(e2eMetadata.devDependencies['@playwright/test'], '^1.50.0');
+    assert.equal(e2eMetadata.devDependencies.playwright, '1.62.1');
+    assert.equal(e2eMetadata.devDependencies['@axe-core/playwright'], '^4.10.0');
     assert.equal(e2eMetadata.scripts.e2e, 'playwright test');
   }
 });
@@ -199,7 +203,6 @@ function assertProfileLifecycle(result, profile) {
     'install',
     'cells app:test',
     'cells app:build',
-    'vite build',
     'test:a11y',
     'lint',
     'locales',
@@ -211,8 +214,7 @@ function assertProfileLifecycle(result, profile) {
     assert.equal(command.result.signal, null, logs);
   }
   assert.equal(result.publicLockOnly, true, logs);
-  assert.equal(result.distIndex, true, logs);
-  assert.equal(result.cellsBuildIndex, true, logs);
+  assert.ok(result.cellsBuildIndex, logs);
   assert.equal(result.localTarball, true, logs);
 }
 

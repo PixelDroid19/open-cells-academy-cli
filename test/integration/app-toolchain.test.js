@@ -490,6 +490,10 @@ test('red: a marked Academy root app uses its root for dev, build resources, and
   await writeConfig(root, 'root-layout.js', appConfig());
   await writeAcademyAppMarker(root);
   await writeWorkspaceFile(root, 'index.html', academyRootTemplate);
+  // Bridge 4 keeps app/tpls/index.tpl for its page-template source while the
+  // runnable HTML lives at the workspace root. Build routing must not mistake
+  // this mixed tree for a legacy dist-only application.
+  await writeWorkspaceFile(root, 'app/tpls/index.tpl', '<main id="bridge4-template-source"></main>\n');
   await writeWorkspaceFile(root, 'resources/logo.txt', 'resource\n');
   await writeWorkspaceFile(root, 'vendor/library.js', 'vendor\n');
   await writeWorkspaceFile(root, 'manifest.json', '{"name":"root-layout"}\n');

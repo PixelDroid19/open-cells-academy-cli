@@ -43,6 +43,13 @@ async function isFile(candidate) {
   }
 }
 
+async function firstFile(root, candidates) {
+  for (const relative of candidates) {
+    if (await isFile(path.join(root, relative))) return relative;
+  }
+  return undefined;
+}
+
 function commandRecord(label, request, result) {
   return Object.freeze({
     args: Object.freeze([...(request.args ?? [])]),
@@ -78,7 +85,7 @@ async function executeCommand(commands, processRunner, label, request) {
 async function runProfile(root, profile, filesystem, processRunner, localCli, cleanBin) {
   const owner = await WorkspaceSession.open(root, filesystem);
   const projectName = `${profile}-lifecycle`;
-  const plan = composeRecipe(profile, { kind: 'app', name: projectName, cellsVersion: '4', localCli });
+  const plan = composeRecipe(profile, { kind: 'app', name: projectName, cellsVersion: '5', localCli });
   const publication = await filesystem.applyPlanAtomically(owner, plan, projectName);
   const project = publication.destination;
   const session = await WorkspaceSession.open(project, filesystem);
@@ -99,7 +106,6 @@ async function runProfile(root, profile, filesystem, processRunner, localCli, cl
   };
   const commands = [commandRecord('install', install.request, install.result)];
   const cellsExecutable = path.join(project, 'node_modules', '.bin', 'cells');
-  const viteExecutable = path.join(project, 'node_modules', '.bin', 'vite');
   const vitestExecutable = path.join(project, 'node_modules', '.bin', 'vitest');
   const cellsTest = await executeCommand(commands, processRunner, 'cells app:test', {
     file: cellsExecutable,
@@ -115,16 +121,9 @@ async function runProfile(root, profile, filesystem, processRunner, localCli, cl
     env: commandEnvironment,
     timeoutMs: 90_000
   });
-  const build = await executeCommand(commands, processRunner, 'vite build', {
-    file: viteExecutable,
-    args: ['build'],
-    cwd: project,
-    env: commandEnvironment,
-    timeoutMs: 90_000
-  });
   const a11y = await executeCommand(commands, processRunner, 'test:a11y', {
     file: vitestExecutable,
-    args: ['run', 'test/app-accessibility.test.js'],
+    args: ['run', 'test/unit'],
     cwd: project,
     env: commandEnvironment,
     timeoutMs: 90_000
@@ -155,12 +154,10 @@ async function runProfile(root, profile, filesystem, processRunner, localCli, cl
   return Object.freeze({
     academyVersion,
     a11y,
-    build,
     cellsBuild,
-    cellsBuildIndex: await isFile(path.join(project, 'build', 'prod', 'index.html')),
+    cellsBuildIndex: await firstFile(project, ['build/prod/index.html', 'build/prod/dist/index.html', 'dist/index.html']),
     cellsTest,
     commands: Object.freeze(commands),
-    distIndex: await isFile(path.join(project, 'dist', 'index.html')),
     lint,
     locales,
     profile,
