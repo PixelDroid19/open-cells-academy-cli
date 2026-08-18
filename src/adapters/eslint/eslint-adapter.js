@@ -1,6 +1,6 @@
 import { typedError } from '../../domain/workspace-session.js';
 
-const APP_PATTERNS = Object.freeze(['app/**/*.js', 'app/**/*.mjs']);
+const APP_PATTERNS = Object.freeze(['app/**/*.{js,mjs}']);
 const COMPONENT_PATTERNS = Object.freeze(['src/**/*.{js,mjs}', 'test/**/*.{js,mjs}', '*.js']);
 const BASE_LANGUAGE_OPTIONS = Object.freeze({ ecmaVersion: 'latest', sourceType: 'module' });
 
@@ -141,6 +141,7 @@ export class EslintAdapter {
       instance = new this.#api.ESLint(Object.freeze({
         cwd: session.root,
         fix,
+        overrideConfigFile: true,
         overrideConfig: Object.freeze(flatConfig)
       }));
     } catch (cause) {

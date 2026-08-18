@@ -702,7 +702,8 @@ export function resolveDispatch({ api, cwd, env = {}, candidateRoot, cliEntrypoi
 
   async function handleBuildApp(tools, parsed, session) {
     if (tools.app === undefined) return toolMissing('vite');
-    const context = baseContext(session);
+    if (tools.sass === undefined) return toolMissing('sass');
+    const context = Object.freeze({ ...baseContext(session), compiler: tools.sass });
     const { loadCellsConfig } = await import('../adapters/vite/config-loader.js');
     const config = await loadCellsConfig(session, optionOf(parsed, 'config'));
     const localeSources = await discoverAppLocaleSources(session.root, config.locales, config.appModules);

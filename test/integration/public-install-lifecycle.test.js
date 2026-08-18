@@ -112,7 +112,7 @@ test('public tarball creates and runs non-browser CLI 4 compatibility scripts th
 
   const project = path.join(workspace, 'bridge3-public-app');
   const manifest = JSON.parse(await readFile(path.join(project, 'package.json'), 'utf8'));
-  assert.deepEqual(Object.keys(manifest.scripts).sort(), ['academy:version', 'e2e', 'locales', 'serve', 'test']);
+  assert.deepEqual(Object.keys(manifest.scripts).sort(), ['academy:version', 'build', 'e2e', 'lint', 'locales', 'serve', 'test']);
   for (const dependency of ['@cells/cells-bridge', '@cells/cells-page-mixin', 'cells-app-template', 'lit', '@open-cells/core', '@open-cells/page-mixin']) {
     assert.equal(manifest.dependencies[dependency], undefined);
     assert.equal(manifest.devDependencies[dependency], undefined);
@@ -125,7 +125,7 @@ test('public tarball creates and runs non-browser CLI 4 compatibility scripts th
   assert.equal(resolved.every(value => value.startsWith('https://registry.npmjs.org/') || value === 'file:tools/open-cells-academy-cli-0.1.0.tgz'), true);
 
   const scriptEnvironment = { ...env, NPM_CONFIG_IGNORE_SCRIPTS: 'false' };
-  for (const script of ['academy:version', 'test', 'locales']) {
+  for (const script of ['academy:version', 'build', 'lint', 'test', 'locales']) {
     const result = await npm(['run', script], { cwd: project, env: scriptEnvironment });
     assert.doesNotMatch(result.stderr, /npm error|ERR!/i, `${script} failed: ${result.stderr}`);
   }

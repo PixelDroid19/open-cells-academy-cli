@@ -93,6 +93,8 @@ function packageMetadata(options, dependencies) {
         }
       : {
           'academy:version': 'cells --version',
+          build: 'cells app:build -c prod.js',
+          lint: 'cells app:lint',
           locales: 'cells app:locales -c dev.js',
           serve: 'cells app:serve -c dev.js',
           test: 'cells app:test'

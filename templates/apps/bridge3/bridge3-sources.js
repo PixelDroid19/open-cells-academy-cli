@@ -888,7 +888,7 @@ function readmeSource() {
 
 This generated app ships an Academy-owned Bridge 3 compatibility runtime in \`app/vendor/runtime\`. It is a local teaching adapter based on documented routing, page lifecycle, and retained-channel contracts; it is not a vendor package.
 
-Use the supported CLI 4 workflow: \`cells app:serve -c dev.js\`, \`cells app:test\`, and \`cells app:locales -c dev.js\`. Build and lint adapters remain outside this compatibility payload until their dedicated toolchain work is available.
+Use the supported CLI 4 workflow: \`cells app:serve -c dev.js\`, \`cells app:build -c prod.js\`, \`cells app:test\`, \`cells app:lint\`, and \`cells app:locales -c dev.js\`. The legacy build publishes \`dist/\`; lint scans the generated \`app/**/*.js\` sources.
 
 ## Optional browser E2E
 

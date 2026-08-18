@@ -88,13 +88,13 @@ test('contract: CLI 4 emits an Academy-owned compatibility runtime with only pub
 
   const metadata = JSON.parse(files.get('package.json'));
   const output = generatedText(files);
-  assert.deepEqual(Object.keys(metadata.scripts).sort(), ['academy:version', 'locales', 'serve', 'test']);
+  assert.deepEqual(Object.keys(metadata.scripts).sort(), ['academy:version', 'build', 'lint', 'locales', 'serve', 'test']);
   assert.equal(metadata.scripts.serve, 'cells app:serve -c dev.js');
   assert.equal(metadata.scripts.test, 'cells app:test');
   assert.equal(metadata.scripts.locales, 'cells app:locales -c dev.js');
   assert.equal(metadata.scripts.dev, undefined);
-  assert.equal(metadata.scripts.build, undefined);
-  assert.equal(metadata.scripts.lint, undefined);
+  assert.equal(metadata.scripts.build, 'cells app:build -c prod.js');
+  assert.equal(metadata.scripts.lint, 'cells app:lint');
   assert.equal(metadata.scripts['cells:build'], undefined);
   for (const dependency of ['@cells/cells-bridge', '@cells/cells-page-mixin', 'cells-app-template', 'lit', '@open-cells/core', '@open-cells/page-mixin']) {
     assert.equal(metadata.dependencies[dependency], undefined, `${dependency} must not be a generated runtime dependency`);
