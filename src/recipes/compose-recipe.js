@@ -85,8 +85,8 @@ function packageMetadata(options, dependencies) {
           'academy:version': 'cells --version',
           build: 'cells app:build -c prod.js',
           dev: 'cells app:dev -c dev.js',
-          lint: 'node scripts/validate-source.js',
-          locales: 'node scripts/validate-locales.js',
+          lint: 'cells app:lint',
+          locales: 'cells app:locales -c dev.js',
           preview: 'cells app:preview -c prod.js',
           test: 'vitest run',
           'test:a11y': 'vitest run test/unit'

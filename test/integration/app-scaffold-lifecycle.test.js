@@ -80,8 +80,8 @@ test('red: every application profile composes a complete runnable and distinct A
     assert.equal(typeof metadata.scripts.build, 'string');
     assert.equal(typeof metadata.scripts.test, 'string');
     assert.equal(typeof metadata.scripts.preview, 'string');
-    assert.equal(typeof metadata.scripts.lint, 'string');
-    assert.equal(typeof metadata.scripts.locales, 'string');
+    assert.equal(metadata.scripts.lint, 'cells app:lint');
+    assert.equal(metadata.scripts.locales, 'cells app:locales -c dev.js');
     assert.equal(metadata.scripts['test:a11y'], 'vitest run test/unit');
     assert.equal(typeof metadata.scripts['academy:version'], 'string');
     for (const configName of ['dev.js', 'prod.js']) {

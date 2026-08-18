@@ -129,15 +129,15 @@ async function runProfile(root, profile, filesystem, processRunner, localCli, cl
     timeoutMs: 90_000
   });
   const lint = await executeCommand(commands, processRunner, 'lint', {
-    file: process.execPath,
-    args: ['scripts/validate-source.js'],
+    file: cellsExecutable,
+    args: ['app:lint'],
     cwd: project,
     env: commandEnvironment,
     timeoutMs: 30_000
   });
   const locales = await executeCommand(commands, processRunner, 'locales', {
-    file: process.execPath,
-    args: ['scripts/validate-locales.js'],
+    file: cellsExecutable,
+    args: ['app:locales', '-c', 'dev.js'],
     cwd: project,
     env: commandEnvironment,
     timeoutMs: 30_000

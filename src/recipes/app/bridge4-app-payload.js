@@ -31,6 +31,7 @@ export function createBridge4ApplicationPayload(profile, options) {
     .addDirectory('app/resources')
     .addDirectory('app/vendor')
     .addDirectory('test/coverage');
+  plan = plan.addDependency('eslint', '9.39.4', 'dev');
   for (const [path, source] of Object.entries(sources)) {
     plan = plan.addFile(path, source);
   }
