@@ -76,6 +76,14 @@ function indexTemplateSource() {
     <link rel="stylesheet" href="styles/main.css">
   </head>
   <body data-open-cells-route="catalog">
+    <header class="academy-shell-header" data-academy-shell>
+      <a class="academy-shell-brand" href="#!/">Open Cells</a>
+      <nav aria-label="Learning navigation">
+        <a href="#!/">Catalog</a>
+        <a href="#!/lesson?lessonId=introduction">Lesson</a>
+      </nav>
+      <span data-academy-shell-language aria-label="Language">en</span>
+    </header>
     <main id="app__content" aria-live="polite"></main>
     <script type="module" src="scripts/app-module.js"></script>
   </body>
@@ -133,7 +141,14 @@ void bridge.start({
   profile: academyProfile,
   loadLessons: loadLocalLessonData,
   localeUrl: language => new URL('../locales/' + language + '.json', import.meta.url)
-});
+}).then(() => {
+    const languageBadge = document.querySelector('[data-academy-shell-language]');
+    if (languageBadge !== null) {
+      window.addEventListener('academy-language-change', event => {
+        languageBadge.textContent = event.detail.language;
+      });
+    }
+  });
 `;
 }
 
@@ -389,6 +404,7 @@ class AcademyBridge3Runtime {
     this.language = language;
     this.target.document.documentElement.lang = language;
     this.target.document.title = this.translate('app.title');
+    this.target.dispatchEvent(new this.target.CustomEvent('academy-language-change', { detail: { language } }));
     if (typeof this.activePage?.onLanguageChange === 'function') this.activePage.onLanguageChange(language);
     return language;
   }
@@ -474,7 +490,8 @@ export class AcademyCatalogPage extends AcademyBridge3PageMixin(HTMLElement) {
         this.state = 'empty';
       } else {
         this.state = 'ready';
-        this.publish(LEARNING_PROGRESS_CHANNEL, { lessonId: this.lessons[0].id, status: 'ready' });
+        this.progress = { lessonId: this.lessons[0].id, status: 'ready' };
+        this.publish(LEARNING_PROGRESS_CHANNEL, this.progress);
       }
     } catch {
       this.lessons = [];
@@ -515,6 +532,16 @@ export class AcademyCatalogPage extends AcademyBridge3PageMixin(HTMLElement) {
       '<button type="button" data-language="es">' + escaped(this.t('language.es')) + '</button></div>' +
       '<h1 id="catalog-title">' + escaped(this.t('catalog.title')) + '</h1>' +
       '<p>' + escaped(this.t('catalog.description')) + '</p>' +
+      '<output data-channel-state aria-live="polite">' + escaped(this.t('catalog.progress', { lessonId: this.progress?.lessonId ?? 'introduction' })) + '</output>' +
+      '<section class="academy-learning-parts" data-learning-parts aria-labelledby="learning-parts-title">' +
+      '<h2 id="learning-parts-title">' + escaped(this.t('catalog.parts.title')) + '</h2>' +
+      '<ul>' +
+      '<li data-learning-part="routes">' + escaped(this.t('catalog.parts.routes')) + '</li>' +
+      '<li data-learning-part="pages">' + escaped(this.t('catalog.parts.pages')) + '</li>' +
+      '<li data-learning-part="channels">' + escaped(this.t('catalog.parts.channels')) + '</li>' +
+      '<li data-learning-part="data">' + escaped(this.t('catalog.parts.data')) + '</li>' +
+      '<li data-learning-part="i18n">' + escaped(this.t('catalog.parts.i18n')) + '</li>' +
+      '</ul></section>' +
       '<p data-profile="true">' + escaped(this.t(profileKey)) + '</p>' +
       guided +
       '<p data-data-state="' + escaped(this.state ?? 'loading') + '">' + escaped(this.t(stateKey)) + '</p>' +
@@ -638,11 +665,20 @@ body {
   font-family: system-ui, sans-serif;
 }
 
+.academy-shell-header { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; padding: .85rem 1.25rem; color: white; background: #172554; }
+.academy-shell-brand { color: inherit; font-weight: 700; text-decoration: none; }
+.academy-shell-header nav { display: flex; gap: .75rem; }
+.academy-shell-header nav a { color: inherit; text-decoration: none; }
+.academy-shell-language { margin-left: auto; font-size: .8rem; text-transform: uppercase; }
+
 .academy-route {
   max-width: 48rem;
   margin: 0 auto;
   padding: 2rem;
 }
+
+.academy-learning-parts { margin: 1.25rem 0; padding: 1rem; border: 1px solid #bfdbfe; border-radius: .5rem; background: #eff6ff; }
+.academy-learning-parts ul { display: grid; gap: .45rem; margin: .5rem 0 0; padding-left: 1.25rem; }
 
 .academy-language {
   display: flex;
@@ -682,6 +718,13 @@ function localeSource(profile, language) {
     'catalog.empty': 'This starter profile has no local learning data.',
     'catalog.error': 'Local learning data is unavailable.',
     'catalog.openLesson': 'Open lesson',
+    'catalog.progress': 'Catalog progress published for {lessonId}.',
+    'catalog.parts.title': 'What this starter demonstrates',
+    'catalog.parts.routes': 'Named routes and URL parameters',
+    'catalog.parts.pages': 'Page enter and leave lifecycle',
+    'catalog.parts.channels': 'Retained publish and subscribe state',
+    'catalog.parts.data': 'A local data manager and fixture state',
+    'catalog.parts.i18n': 'English and Spanish locale catalogs',
     'catalog.guidedLearning': 'Guided learning is enabled for this profile.',
     'lesson.title': 'Open Cells lesson: {lessonId}',
     'lesson.progress': 'Latest progress: {lessonId}',
@@ -702,6 +745,13 @@ function localeSource(profile, language) {
     'catalog.empty': 'Este perfil inicial no tiene datos locales de aprendizaje.',
     'catalog.error': 'Los datos locales de aprendizaje no están disponibles.',
     'catalog.openLesson': 'Abrir lección',
+    'catalog.progress': 'Progreso del catálogo publicado para {lessonId}.',
+    'catalog.parts.title': 'Qué demuestra este starter',
+    'catalog.parts.routes': 'Rutas con nombre y parámetros de URL',
+    'catalog.parts.pages': 'Ciclo de vida de entrada y salida de página',
+    'catalog.parts.channels': 'Estado retenido con publicar y suscribir',
+    'catalog.parts.data': 'Un gestor de datos y estados locales',
+    'catalog.parts.i18n': 'Catálogos de idioma en inglés y español',
     'catalog.guidedLearning': 'El aprendizaje guiado está activo para este perfil.',
     'lesson.title': 'Lección Open Cells: {lessonId}',
     'lesson.progress': 'Último progreso: {lessonId}',
@@ -886,7 +936,7 @@ if (englishKeys.length === 0 || JSON.stringify(englishKeys) !== JSON.stringify(O
 function readmeSource() {
   return `# Open Cells Bridge 3 learning app
 
-This generated app ships an Academy-owned Bridge 3 compatibility runtime in \`app/vendor/runtime\`. It is a local teaching adapter based on documented routing, page lifecycle, and retained-channel contracts; it is not a vendor package.
+This generated app ships an Academy-owned Bridge 3 compatibility runtime in \`app/vendor/runtime\`. It is a local teaching adapter based on documented routing, page lifecycle, and retained-channel contracts; it is not a vendor package. The initial template includes a small shell with catalog/lesson navigation and an active-language badge; page controls switch language, while the catalog makes the app parts visible for learning.
 
 Use the supported CLI 4 workflow: \`cells app:serve -c dev.js\`, \`cells app:build -c prod.js\`, \`cells app:test\`, \`cells app:lint\`, and \`cells app:locales -c dev.js\`. The legacy build publishes \`dist/\`; lint scans the generated \`app/**/*.js\` sources.
 

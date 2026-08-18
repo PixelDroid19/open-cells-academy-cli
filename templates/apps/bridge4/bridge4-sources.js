@@ -61,6 +61,15 @@ function localeCatalogSource(profile) {
       'catalog.lesson.title': 'Open Cells fundamentals',
       'catalog.lesson.description': 'Open the lesson with a named route and an object parameter.',
       'catalog.openLesson': 'Open lesson',
+      'catalog.parts.title': 'What this starter demonstrates',
+      'catalog.parts.routes': 'Named routes and URL parameters',
+      'catalog.parts.pages': 'Page enter and leave lifecycle',
+      'catalog.parts.channels': 'Retained publish and subscribe state',
+      'catalog.parts.data': 'A cancellable local data manager',
+      'catalog.parts.i18n': 'English and Spanish IntlMsg catalogs',
+      'shell.home': 'Catalog',
+      'shell.lesson': 'Lesson',
+      'shell.language': 'Language',
       'catalog.progress': 'Catalog progress published for {lessonId}.',
       'lesson.title': 'Lesson: {lessonId}',
       'lesson.description': 'The lesson receives route parameters and the latest catalog progress.',
@@ -82,6 +91,15 @@ function localeCatalogSource(profile) {
       'catalog.lesson.title': 'Fundamentos de Open Cells',
       'catalog.lesson.description': 'Abre la lección con una ruta con nombre y un parámetro de objeto.',
       'catalog.openLesson': 'Abrir lección',
+      'catalog.parts.title': 'Qué demuestra este starter',
+      'catalog.parts.routes': 'Rutas con nombre y parámetros de URL',
+      'catalog.parts.pages': 'Ciclo de vida de entrada y salida de página',
+      'catalog.parts.channels': 'Estado retenido con publicar y suscribir',
+      'catalog.parts.data': 'Un gestor de datos local cancelable',
+      'catalog.parts.i18n': 'Catálogos IntlMsg en inglés y español',
+      'shell.home': 'Catálogo',
+      'shell.lesson': 'Lección',
+      'shell.language': 'Idioma',
       'catalog.progress': 'Progreso del catálogo publicado para {lessonId}.',
       'lesson.title': 'Lección: {lessonId}',
       'lesson.description': 'La lección recibe parámetros de ruta y el progreso más reciente del catálogo.',
@@ -191,17 +209,65 @@ function initialComponentsSource() {
 }
 
 function litComponentsSource() {
-  return `import '../tpls/catalog-page-template.js';
+  return `import '../tpls/academy-app-shell.js';
+import '../tpls/catalog-page-template.js';
 import '../tpls/lesson-page-template.js';
 import '../data-managers/lesson-data-manager.js';
 `;
 }
 
-function catalogTemplateSource() {
+function appShellSource() {
   return `import { LitElement, html } from 'lit';
+import { currentLanguage, t } from '../scripts/localization.js';
+
+export class AcademyAppShell extends LitElement {
+  static properties = {
+    language: { state: true }
+  };
+
+  constructor() {
+    super();
+    this.language = currentLanguage();
+    this.onLanguageChange = event => {
+      this.language = event.detail.language;
+    };
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener('academy-language-change', this.onLanguageChange);
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener('academy-language-change', this.onLanguageChange);
+    super.disconnectedCallback();
+  }
+
+  render() {
+    return html\`<header class="academy-shell-header">
+      <a class="academy-shell-brand" href="/#!/" aria-label=\"Open Cells\">Open Cells</a>
+      <nav aria-label=\"\${t('shell.home', this.language)}\">
+        <a href="/#!/">\${t('shell.home', this.language)}</a>
+        <a href="/#!/lesson/introduction">\${t('shell.lesson', this.language)}</a>
+      </nav>
+      <span class="academy-shell-language" aria-label=\"\${t('shell.language', this.language)}\">\${this.language}</span>
+    </header><slot></slot>\`;
+  }
+}
+
+if (customElements.get('academy-app-shell') === undefined) {
+  customElements.define('academy-app-shell', AcademyAppShell);
+}
+`;
+}
+
+function catalogTemplateSource() {
+  return `import { LitElement, css, html } from 'lit';
 import { currentLanguage, setLanguage, t } from '../scripts/localization.js';
 
 export class CatalogPageTemplate extends LitElement {
+  static styles = css\`:host { display: block; } :host([state="inactive"]), :host([state="cached"]) { display: none; }\`;
+
   static properties = {
     language: { type: String },
     state: { type: String, reflect: true }
@@ -237,9 +303,11 @@ if (customElements.get('catalog-page-template') === undefined) {
 }
 
 function lessonTemplateSource() {
-  return `import { LitElement, html } from 'lit';
+  return `import { LitElement, css, html } from 'lit';
 
 export class LessonPageTemplate extends LitElement {
+  static styles = css\`:host { display: block; } :host([state="inactive"]), :host([state="cached"]) { display: none; }\`;
+
   static properties = {
     state: { type: String, reflect: true }
   };
@@ -277,13 +345,15 @@ export class CatalogPage extends PageMixin(LitElement) {
 
   static properties = {
     language: { state: true },
-    lessonId: { state: true }
+    lessonId: { state: true },
+    progress: { state: true }
   };
 
   constructor() {
     super();
     this.language = currentLanguage();
     this.lessonId = 'introduction';
+    this.progress = undefined;
     this.onLanguageChange = event => {
       this.language = event.detail.language;
     };
@@ -300,13 +370,15 @@ export class CatalogPage extends PageMixin(LitElement) {
   }
 
   onPageEnter() {
-    this.publish(ACADEMY_PROGRESS_CHANNEL, createProgress(this.lessonId));
+    this.progress = createProgress(this.lessonId);
+    this.publish(ACADEMY_PROGRESS_CHANNEL, this.progress);
   }
 
   selectLesson() {
     const lessonId = this.lessonId;
     const progress = createProgress(lessonId);
     this.lessonId = lessonId;
+    this.progress = progress;
     this.publish(ACADEMY_PROGRESS_CHANNEL, progress);
     this.navigate('lesson', { lessonId });
   }
@@ -319,6 +391,17 @@ export class CatalogPage extends PageMixin(LitElement) {
       <section slot="app-main-content" aria-labelledby="catalog-title">
         <h1 id="catalog-title">\${t('catalog.title', this.language)}</h1>
         <p>\${t('catalog.description', this.language)}</p>
+        <output data-channel-state aria-live="polite">\${t('catalog.progress', this.language, { lessonId: this.progress?.lessonId ?? this.lessonId })}</output>
+        <section class="academy-learning-parts" aria-labelledby="learning-parts-title" data-learning-parts>
+          <h2 id="learning-parts-title">\${t('catalog.parts.title', this.language)}</h2>
+          <ul>
+            <li data-learning-part="routes">\${t('catalog.parts.routes', this.language)}</li>
+            <li data-learning-part="pages">\${t('catalog.parts.pages', this.language)}</li>
+            <li data-learning-part="channels">\${t('catalog.parts.channels', this.language)}</li>
+            <li data-learning-part="data">\${t('catalog.parts.data', this.language)}</li>
+            <li data-learning-part="i18n">\${t('catalog.parts.i18n', this.language)}</li>
+          </ul>
+        </section>
         <article>
           <h2>\${t('catalog.lesson.title', this.language)}</h2>
           <p>\${t('catalog.lesson.description', this.language)}</p>
@@ -510,7 +593,7 @@ if (customElements.get(LessonPage.is) === undefined) {
 }
 
 function indexTemplateSource() {
-  return `<main id="app__content" aria-live="polite"></main>
+  return `<academy-app-shell><main id="app__content" aria-live="polite"></main></academy-app-shell>
 <script type="module" src="scripts/app-module.js"></script>
 `;
 }
@@ -524,7 +607,7 @@ function indexSource() {
     <title></title>
   </head>
   <body>
-    <main id="app__content" aria-live="polite"></main>
+    <academy-app-shell><main id="app__content" aria-live="polite"></main></academy-app-shell>
     <script type="module" src="/app/scripts/app-module.js"></script>
   </body>
 </html>
@@ -541,6 +624,14 @@ body {
   margin: 0;
   background: #f8fafc;
 }
+
+academy-app-shell { display: block; min-height: 100vh; }
+.academy-shell-header { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; padding: .85rem 1.25rem; color: white; background: #172554; }
+.academy-shell-brand { color: inherit; font-weight: 700; text-decoration: none; }
+.academy-shell-header nav { display: flex; gap: .75rem; }
+.academy-shell-header nav a { color: inherit; text-decoration: none; }
+.academy-shell-language { display: flex; gap: .35rem; margin-left: auto; }
+.academy-shell-language button { color: #172554; background: white; padding: .35rem .55rem; }
 
 catalog-page-template,
 lesson-page-template {
@@ -563,6 +654,9 @@ article {
   padding: 1rem;
   background: white;
 }
+
+.academy-learning-parts { margin: 1.25rem 0; padding: 1rem; border: 1px solid #bfdbfe; border-radius: .5rem; background: #eff6ff; }
+.academy-learning-parts ul { display: grid; gap: .45rem; margin: .5rem 0 0; padding-left: 1.25rem; }
 
 button {
   border: 0;
@@ -679,9 +773,9 @@ for (const language of languages) {
 function readmeSource() {
   return `# Open Cells learning app
 
-This generated application uses the public Open Cells runtime, Lit 3, named routes, and page lifecycle hooks. Start it with \`cells app:dev -c dev.js\`, build it with \`cells app:build -c prod.js\`, and preview it with \`cells app:preview -c prod.js\`.
+This generated application uses the public Open Cells runtime, Lit 3, named routes, page lifecycle hooks, and a small app shell. Start it with \`cells app:dev -c dev.js\`, build it with \`cells app:build -c prod.js\`, and preview it with \`cells app:preview -c prod.js\`.
 
-The catalog publishes the public \`academy-progress\` channel. The lesson consumes its latest value when it enters and unsubscribes when it leaves. Route parameters carry the selected lesson identifier, while the nonvisual data manager serves local fixture data only.
+The first catalog page is intentionally a learning map: it makes routes, page enter/leave hooks, retained channels, a cancellable local data manager, and English/Spanish locale catalogs visible in the UI. The shell exposes Catalog, Lesson, and the active language; the page controls let learners switch English and Spanish. The lesson consumes the latest \`academy-progress\` value when it enters and unsubscribes when it leaves. Route parameters carry the selected lesson identifier, while the nonvisual data manager serves local fixture data only.
 
 Run \`cells app:test\` for generated unit tests and \`cells app:locales\` to validate English and Spanish catalog parity.
 `;
@@ -921,6 +1015,7 @@ export function createBridge4Sources(profile, name, { e2e = false } = {}) {
     'app/scripts/lit-initial-components.js': initialComponentsSource(),
     'app/scripts/localization.js': localizationSource(),
     'app/styles/main.scss': stylesSource(),
+    'app/tpls/academy-app-shell.js': appShellSource(),
     'app/tpls/catalog-page-template.js': catalogTemplateSource(),
     'app/tpls/index.tpl': indexTemplateSource(),
     'app/tpls/lesson-page-template.js': lessonTemplateSource(),

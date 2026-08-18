@@ -21,6 +21,16 @@ test('CLI 4 Lit 1 and Lit 3 select separate executable trees and lit-component c
   assert.equal(manifest(lit3).dependencies.lit, '^3.3.3');
   assert.match(lit1.get('src/legacy-card.js'), /from 'lit-element'/u);
   assert.match(lit3.get('src/modern-card.js'), /from 'lit'/u);
+  for (const [files, sourceName] of [[lit1, 'legacy-card'], [lit3, 'modern-card']]) {
+    assert.equal(files.has('demo/basic.html'), true);
+    assert.equal(files.has('demo/demo-build.js'), true);
+    assert.equal(files.has('demo/academy-demo-helper.js'), true);
+    assert.equal(files.has('demo/locales/locales.json'), true);
+    assert.match(files.get('demo/index.html'), /academy-demo-case/u);
+    assert.match(files.get('demo/academy-demo-helper.js'), /customViewportWidth/u);
+    const sourcePath = `src/${sourceName}.js`;
+    assert.match(files.get(sourcePath), /-continue/u);
+  }
   assert.match(lit1.get('README.md'), /lit-component:serve/u);
   assert.match(lit3.get('README.md'), /lit-component:test/u);
   assert.doesNotMatch(lit1.get('src/legacy-card.js'), /Polymer/u);

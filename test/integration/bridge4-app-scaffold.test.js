@@ -345,6 +345,7 @@ test('contract: every CLI 5 app profile emits the complete Bridge 4 learning tre
     'app/scripts/app-routes.js',
     'app/scripts/lit-initial-components.js',
     'app/scripts/lit-components.js',
+    'app/tpls/academy-app-shell.js',
     'app/pages/catalog-page/catalog-page.js',
     'app/pages/lesson-page/lesson-page.js',
     'app/data-managers/lesson-data-manager.js',
@@ -374,6 +375,21 @@ test('contract: every CLI 5 app profile emits the complete Bridge 4 learning tre
     assert.equal([...files.values()].some(source => /\bBridge\b/.test(source)), false);
     assert.equal([...files.keys()].some(path => path.startsWith('src/runtime/')), false);
   }
+});
+
+test('contract: Bridge 4 starter exposes its app shell and learning parts', () => {
+  const files = bridge4Files('academy-app');
+  const shell = files.get('app/tpls/academy-app-shell.js');
+  const index = files.get('index.html');
+  const catalog = files.get('app/pages/catalog-page/catalog-page.js');
+  assert.match(index, /<academy-app-shell>[\s\S]*app__content/);
+  assert.match(shell, /customElements\.define\('academy-app-shell'/);
+  assert.match(shell, /shell\.lesson/);
+  assert.match(shell, /academy-language-change/);
+  for (const part of ['routes', 'pages', 'channels', 'data', 'i18n']) {
+    assert.match(catalog, new RegExp(`data-learning-part="${part}"`));
+  }
+  assert.match(catalog, /data-channel-state/);
 });
 
 test('contract: default application creation normalizes into the Bridge 4 payload', async t => {
@@ -1042,6 +1058,22 @@ test('red: real Chrome starts the public Open Cells runtime and exercises lifecy
       pageChannel: '__oc_page_lesson',
       params: { lessonId: 'route-param' }
     });
+    const cachedTemplateVisibility = await page.evaluate(() => {
+      const catalog = document.querySelector('catalog-page')?.shadowRoot?.querySelector('[data-cells-type="template"]');
+      const lesson = document.querySelector('lesson-page')?.shadowRoot?.querySelector('[data-cells-type="template"]');
+      return {
+        catalogState: catalog?.getAttribute('state'),
+        catalogDisplay: catalog === null ? undefined : getComputedStyle(catalog).display,
+        lessonState: lesson?.getAttribute('state'),
+        lessonDisplay: lesson === null ? undefined : getComputedStyle(lesson).display
+      };
+    });
+    assert.deepEqual(cachedTemplateVisibility, {
+      catalogState: 'inactive',
+      catalogDisplay: 'none',
+      lessonState: 'active',
+      lessonDisplay: 'block'
+    });
 
     const cancellation = await page.locator('lesson-page').evaluate(async element => {
       const manager = element.shadowRoot.querySelector('lesson-data-manager');
@@ -1086,6 +1118,8 @@ test('red: Bridge 4 pages render a Cells template contract instead of a plain Li
     assert.match(template, /data-cells-type/);
     assert.match(template, /state/);
     assert.match(template, /'inactive'/);
+    assert.match(template, /static styles = css/);
+    assert.match(template, /state="inactive"/);
     assert.match(template, /slot name="app-main-content"/);
   }
   assert.match(catalogPage, /<catalog-page-template[\s\S]*data-cells-type="template"/);

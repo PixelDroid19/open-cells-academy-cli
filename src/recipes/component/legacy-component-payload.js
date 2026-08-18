@@ -1,6 +1,7 @@
 import { ScaffoldPlan } from '../../domain/scaffold-plan.js';
 import { typedError } from '../../domain/workspace-session.js';
 import { assertLegacyComponentProfile } from './legacy-component-profiles.js';
+import { demoHelperSource } from './component-payload.js';
 
 function className(name) {
   return name.split('-').map(part => `${part[0].toUpperCase()}${part.slice(1)}`).join('');
@@ -47,11 +48,129 @@ export class ${klass} extends LitElement {
   }
 
   render() {
-    return html\`<button type="button">\${this.label}</button>\`;
+    return html\`<button type="button" @click=\${this.notifyContinue}>\${this.label}</button>\`;
+  }
+
+  notifyContinue() {
+    this.dispatchEvent(new CustomEvent('${name}-continue', {
+      bubbles: true,
+      composed: true,
+      cancelable: true,
+      detail: { component: '${name}' }
+    }));
   }
 }
 
 if (customElements.get('${name}') === undefined) customElements.define('${name}', ${klass});
+`;
+}
+
+function demoIndexSource(name) {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${name} demo</title>
+  </head>
+  <body>
+    <academy-demo-helper events="${name}-continue">
+      <academy-demo-case heading="Basic" description="A first Cells 4 Lit case with locale and event controls." src="./basic.html"></academy-demo-case>
+    </academy-demo-helper>
+    <script type="module" src="./demo-build.js"></script>
+  </body>
+</html>
+`;
+}
+
+function rootIndexSource(name) {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${name}</title>
+    <meta http-equiv="refresh" content="0; url=demo/index.html">
+  </head>
+  <body></body>
+</html>
+`;
+}
+
+function basicDemoSource(name) {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${name} basic demo</title>
+    <script>
+      window.IntlMsg = window.IntlMsg || {};
+      window.IntlMsg.lang = document.documentElement.lang;
+      window.IntlMsg.localesHost = '.';
+    </script>
+  </head>
+  <body>
+    <main data-demo-root></main>
+    <script type="module" src="./demo.js"></script>
+  </body>
+</html>
+`;
+}
+
+function demoSource(name) {
+  return `import '../src/${name}.js';
+import catalogs from './locales/locales.json' with { type: 'json' };
+
+const root = document.querySelector('[data-demo-root]');
+const component = document.createElement('${name}');
+const eventOutput = document.createElement('output');
+const controls = document.createElement('div');
+const english = document.createElement('button');
+const spanish = document.createElement('button');
+const key = '${name}.label';
+
+english.type = 'button';
+english.textContent = 'English';
+spanish.type = 'button';
+spanish.textContent = 'Spanish';
+controls.append(english, spanish);
+
+function labels(language) {
+  return {
+    caseBasic: language === 'es' ? 'Básico' : 'Basic',
+    caseBasicDescription: language === 'es' ? 'Un primer caso Lit de Cells 4 con idioma y eventos.' : 'A first Cells 4 Lit case with locale and event controls.',
+    resolution: language === 'es' ? 'Preajuste de viewport' : 'Viewport preset',
+    viewport: language === 'es' ? 'Viewport de demo' : 'Demo viewport',
+    events: language === 'es' ? 'Eventos' : 'Events',
+    eventsEmpty: language === 'es' ? 'Aún no se han capturado eventos.' : 'No events captured yet.',
+    customWidth: language === 'es' ? 'Ancho' : 'Width',
+    customHeight: language === 'es' ? 'Alto' : 'Height',
+    apply: language === 'es' ? 'Aplicar' : 'Apply'
+  };
+}
+
+function publishLabels(language) {
+  window.parent.postMessage({ source: 'academy-demo', kind: 'labels', labels: labels(language) }, window.location.origin);
+}
+
+function render(language) {
+  document.documentElement.lang = language;
+  component.label = catalogs[language]?.[key] ?? catalogs.en[key];
+  eventOutput.textContent = language === 'es' ? 'Activa el componente para ver su evento.' : 'Activate the component to see its event.';
+  root.replaceChildren(controls, component, eventOutput);
+  publishLabels(language);
+}
+
+component.addEventListener('${name}-continue', event => {
+  const language = document.documentElement.lang;
+  eventOutput.textContent = (language === 'es' ? 'Evento: ' : 'Event: ') + event.type;
+  window.parent.postMessage({ source: 'academy-demo', kind: 'event', eventType: event.type, detail: event.detail }, window.location.origin);
+});
+
+english.addEventListener('click', () => render('en'));
+spanish.addEventListener('click', () => render('es'));
+render('en');
 `;
 }
 
@@ -130,9 +249,9 @@ export function createLegacyComponentPayload(options) {
   const locale = catalogs(normalized.name);
   let plan = ScaffoldPlan.empty()
     .addDirectory('test/coverage')
-    .addFile('index.html', '<!doctype html><html lang="en"><body><main></main><script type="module" src="./demo/demo.js"></script></body></html>\n')
-    .addFile('demo/index.html', '<!doctype html><html lang="en"><body><main></main><script type="module" src="./demo.js"></script></body></html>\n')
-    .addFile('demo/demo.js', `import '../src/${normalized.name}.js';\n`)
+    .addFile('index.html', base === undefined ? '<!doctype html><html lang="en"><body><main></main><script type="module" src="./demo/demo.js"></script></body></html>\n' : rootIndexSource(normalized.name))
+    .addFile('demo/index.html', base === undefined ? '<!doctype html><html lang="en"><body><main></main><script type="module" src="./demo.js"></script></body></html>\n' : demoIndexSource(normalized.name))
+    .addFile('demo/demo.js', base === undefined ? `import '../src/${normalized.name}.js';\n` : demoSource(normalized.name))
     .addFile('vite.config.js', viteConfigSource())
     .addFile('vitest.config.js', vitestConfigSource())
     .addFile('locales/locales.json', JSON.stringify(locale, null, 2) + '\n')
@@ -141,6 +260,10 @@ export function createLegacyComponentPayload(options) {
     .addFile(`test/unit/${normalized.name}.test.js`, `import '../../src/${normalized.name}.js';\n\ntest('${normalized.name} source loads', () => {});\n`)
   if (base !== undefined) {
     plan = plan
+      .addFile('demo/basic.html', basicDemoSource(normalized.name))
+      .addFile('demo/demo-build.js', "import './academy-demo-helper.js';\n")
+      .addFile('demo/academy-demo-helper.js', demoHelperSource())
+      .addFile('demo/locales/locales.json', JSON.stringify(locale, null, 2) + '\n')
       .addFile(`src/${normalized.name}.scss`, `:host { display: block; }\n`)
       .addFile(`src/${normalized.name}.css.js`, litStylesSource(base))
       .addDependency(base === 'lit1' ? 'lit-element' : 'lit', base === 'lit1' ? '^2.5.1' : '^3.3.3', 'runtime')

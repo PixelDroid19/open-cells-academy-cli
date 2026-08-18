@@ -106,6 +106,13 @@ test('contract: CLI 4 emits an Academy-owned compatibility runtime with only pub
   assert.match(files.get('app/scripts/app.js'), /installAcademyBridge3Compatibility/u);
   assert.match(files.get('app/scripts/app.js'), /mainNode/u);
   assert.match(files.get('app/pages/catalog-page/catalog-page.js'), /AcademyBridge3PageMixin/u);
+  assert.match(files.get('app/tpls/index.tpl'), /data-academy-shell-language/u);
+  const catalog = files.get('app/pages/catalog-page/catalog-page.js');
+  for (const part of ['routes', 'pages', 'channels', 'data', 'i18n']) {
+    assert.match(catalog, new RegExp(`data-learning-part="${part}"`));
+  }
+  assert.match(catalog, /data-channel-state/u);
+  assert.match(files.get('app/vendor/runtime/academy-bridge3-compat.js'), /academy-language-change/u);
   assert.match(files.get('app/pages/lesson-page/lesson-page.js'), /AcademyBridge3PageMixin/u);
   assert.match(files.get('README.md'), /Academy-owned Bridge 3 compatibility runtime/u);
   assert.doesNotMatch(output, /@cells\/|@open-cells\/|startApp|startBridge/u);

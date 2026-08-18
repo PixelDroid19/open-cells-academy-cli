@@ -214,6 +214,7 @@ test('component recipe publishes the complete modern component package tree', ()
     'demo/basic.html',
     'demo/demo.js',
     'demo/demo-build.js',
+    'demo/academy-demo-helper.js',
     'demo/locales/locales.json',
     'locales/locales.json',
     'test/unit/locales/locales.json'
@@ -240,7 +241,14 @@ test('component recipe publishes the complete modern component package tree', ()
   assert.match(files.get('src/academy-card.scss'), /:host/);
   assert.match(files.get('src/academy-card.css.js'), /export default css`/);
   assert.match(files.get('demo/basic.html'), /src="\.\/demo\.js"/);
-  assert.match(files.get('demo/demo-build.js'), /import '\.\/demo\.js';/);
+  assert.match(files.get('demo/demo-build.js'), /import '\.\/academy-demo-helper\.js';/);
+  assert.match(files.get('demo/index.html'), /academy-demo-helper/);
+  assert.match(files.get('demo/index.html'), /academy-demo-case/);
+  assert.match(files.get('demo/index.html'), /<title>academy-card demo<\/title>/);
+  assert.match(files.get('demo/basic.html'), /<title>academy-card basic demo<\/title>/);
+  assert.match(files.get('demo/academy-demo-helper.js'), /resolution/);
+  assert.match(files.get('demo/academy-demo-helper.js'), /customViewportWidth/);
+  assert.match(files.get('demo/academy-demo-helper.js'), /message\.kind !== 'event'/);
   assert.equal(JSON.parse(files.get('custom-elements.json')).schemaVersion, '1.0.0');
 });
 
@@ -280,6 +288,7 @@ test('component recipe generates an independent scoped educational component wit
     'src/academy-card.css.js',
     'demo/basic.html',
     'demo/demo-build.js',
+    'demo/academy-demo-helper.js',
     'demo/index.html',
     'demo/demo.js',
     'demo/locales/locales.json',
@@ -343,6 +352,10 @@ test('component recipe generates an independent scoped educational component wit
   assert.match(demo, /await import\('\.\.\/academy-card\.js'\);/);
   assert.match(demo, /intlMsg\.t\(["']academy-card\.demo\.title["']\)/);
   assert.match(demo, /academy-card-continue/);
+  assert.match(files.get('demo/index.html'), /events="academy-card-continue"/);
+  assert.match(files.get('demo/academy-demo-helper.js'), /data-demo-frame/);
+  assert.match(files.get('demo/academy-demo-helper.js'), /mobile/);
+  assert.match(files.get('demo/basic.html'), /window\.IntlMsg/);
   assert.match(unitTest, /forTesting: true/);
   assert.match(unitTest, /await intlMsg\.loadUrlResourcesComplete;/);
   assert.match(unitTest, /intlMsg\.lang = 'es';/);
@@ -387,7 +400,9 @@ test('component E2E is conditional and exercises localized component events', ()
   assert.equal(e2eMetadata.devDependencies['@playwright/test'], '^1.50.0');
   assert.equal(e2eMetadata.devDependencies['@axe-core/playwright'], '^4.10.0');
   assert.match(e2e.get('playwright.config.js'), /cells component:dev --host 127\.0\.0\.1 --port 4173 --strictPort --no-open/);
-  assert.match(e2e.get('e2e/academy-card.spec.js'), /page\.goto\('\/'\)/);
+  assert.match(e2e.get('e2e/academy-card.spec.js'), /page\.goto\('\/demo\/'\)/);
+  assert.match(e2e.get('e2e/academy-card.spec.js'), /frameLocator\('iframe\[data-demo-frame\]'\)/);
+  assert.match(e2e.get('e2e/academy-card.spec.js'), /Viewport preset/);
   assert.match(e2e.get('e2e/academy-card.spec.js'), /academy-card-continue/);
   assert.match(e2e.get('e2e/academy-card.spec.js'), /Spanish/);
   assert.match(e2e.get('e2e/academy-card.spec.js'), /academy card listo/);
