@@ -33,6 +33,8 @@ test('CLI 4 Lit 1 and Lit 3 select separate executable trees and lit-component c
   }
   assert.match(lit1.get('README.md'), /lit-component:serve/u);
   assert.match(lit3.get('README.md'), /lit-component:test/u);
+  assert.equal(manifest(lit1).scripts.sass, 'cells component:sass');
+  assert.equal(manifest(lit3).scripts.sass, 'cells component:sass');
   assert.doesNotMatch(lit1.get('src/legacy-card.js'), /Polymer/u);
   assert.doesNotMatch(lit3.get('src/modern-card.js'), /Polymer/u);
 });

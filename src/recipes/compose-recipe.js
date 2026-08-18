@@ -114,7 +114,7 @@ function packageMetadata(options, dependencies) {
       documentation: `cells ${prefix}:documentation`,
       lint: `cells ${prefix}:lint`,
       locales: `cells ${prefix}:locales`,
-      sass: `cells ${prefix}:sass`,
+      sass: 'cells component:sass',
       test: `cells ${prefix}:test`,
       'test:coverage': `cells ${prefix}:test --coverage`
     };
