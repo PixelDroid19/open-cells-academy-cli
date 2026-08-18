@@ -574,6 +574,7 @@ export function createComponentPayload(input = {}) {
   const locales = componentCatalogs(name, keys);
   let plan = ScaffoldPlan.empty()
     .addDirectory('test/coverage')
+    .addDependency('eslint', '9.39.4', 'dev')
     .addFile('index.html', rootIndexSource())
     .addFile('index.js', `export { ${className} } from './src/${className}.js';\n`)
     .addFile(`${name}.js`, entrypointSource(name, className))

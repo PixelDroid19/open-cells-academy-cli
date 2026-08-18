@@ -180,6 +180,7 @@ test('component recipe publishes component-only guidance and a source-specific c
   assert.doesNotMatch(readme, /@open-cells\/core|Academy channels|browser facade/i);
   assert.equal(appManifest.dependencies['@open-cells/core'], '1.2.1');
   assert.equal(manifest.devDependencies['@vitest/coverage-v8'], '3.2.4');
+  assert.equal(manifest.devDependencies.eslint, '9.39.4');
   assert.match(config, /coverage: \{/);
   assert.match(config, /provider: 'v8'/);
   assert.match(config, /reporter: \['text', 'lcov'\]/);
@@ -304,6 +305,7 @@ test('component recipe generates an independent scoped educational component wit
   assert.equal(manifest.dependencies['@open-wc/scoped-elements'], '3.0.10');
   assert.equal(manifest.devDependencies['happy-dom'], '20.11.2');
   assert.equal(manifest.devDependencies.vite, '7.3.6');
+  assert.equal(manifest.devDependencies.eslint, '9.39.4');
 
   assert.match(component, /import \{ ScopedElementsMixin \} from '@open-wc\/scoped-elements\/lit-element\.js';/);
   assert.match(component, /import \{ WidgetMixin as widgetMixin \} from '\.\/mixins\/WidgetMixin\.js';/);
