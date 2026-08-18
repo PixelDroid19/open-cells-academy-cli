@@ -148,14 +148,18 @@ export function createLegacyComponentPayload(options) {
       .addDependency('sass', '^1.80.0', 'dev')
       .addDependency('vite', '7.3.6', 'dev')
       .addDependency('vitest', '^3.2.4', 'dev')
-      .addDependency('happy-dom', '^20.11.2', 'dev');
+      .addDependency('happy-dom', '^20.11.2', 'dev')
+      .addDependency('eslint', '^9.0.0', 'dev')
+      .addDependency('@custom-elements-manifest/analyzer', '^0.10.0', 'dev');
   } else {
     plan = plan
       .addDependency('@polymer/polymer', '^3.5.0', 'runtime')
       .addDependency('@webcomponents/webcomponentsjs', '^2.8.0', 'dev')
       .addDependency('vite', '7.3.6', 'dev')
       .addDependency('vitest', '^3.2.4', 'dev')
-      .addDependency('happy-dom', '^20.11.2', 'dev');
+      .addDependency('happy-dom', '^20.11.2', 'dev')
+      .addDependency('eslint', '^9.0.0', 'dev')
+      .addDependency('@custom-elements-manifest/analyzer', '^0.10.0', 'dev');
   }
   if (normalized.e2e) plan = plan.addFile('e2e/smoke.spec.js', `import { test, expect } from '@playwright/test';\ntest('${normalized.name}', async ({ page }) => { await page.goto('/'); await expect(page).toHaveTitle(/./u); });\n`).addDependency('@playwright/test', '^1.50.0', 'dev');
   return plan;

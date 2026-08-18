@@ -176,6 +176,24 @@ cells component:documentation
 cells component:locales
 ```
 
+To teach the CLI 4 component families, select the version and profile in the
+scaffold JSON. Lit 1 and Lit 3 use the legacy `lit-component:*` vocabulary;
+the Polymer-era profiles use `component:*` and remain isolated from the modern
+Open Cells component payload:
+
+```json
+{
+  "name": "academy-legacy-card",
+  "namespace": "academy",
+  "cellsVersion": "4",
+  "componentBase": "lit3"
+}
+```
+
+The supported Polymer values for `componentProfile` are `component`,
+`behavior`, `data-manager`, and `theme`. They generate separate educational
+trees with their own source, demo, locale, test, and CLI 4 command contracts.
+
 The generated component teaches these contracts directly in its source:
 
 ```js
