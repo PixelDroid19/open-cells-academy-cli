@@ -428,11 +428,11 @@ test('red: CLI 5 scripts and E2E server use the local Cells configuration workfl
   assert.equal(modernMetadata.scripts.preview, 'cells app:preview -c prod.js');
   assert.match(playwrightConfig, /cells app:dev -c dev\.js/);
   assert.doesNotMatch(playwrightConfig, /npm run dev/);
-  assert.deepEqual(Object.keys(legacyMetadata.scripts).sort(), ['academy:version', 'locales', 'serve', 'test']);
+  assert.deepEqual(Object.keys(legacyMetadata.scripts).sort(), ['academy:version', 'build', 'lint', 'locales', 'serve', 'test']);
   assert.equal(legacyMetadata.scripts.serve, 'cells app:serve -c dev.js');
-  assert.equal(legacyMetadata.scripts.build, undefined);
+  assert.equal(legacyMetadata.scripts.build, 'cells app:build -c prod.js');
   assert.equal(legacyMetadata.scripts.dev, undefined);
-  assert.equal(legacyMetadata.scripts.lint, undefined);
+  assert.equal(legacyMetadata.scripts.lint, 'cells app:lint');
   assert.equal(legacyMetadata.scripts.preview, undefined);
 });
 
