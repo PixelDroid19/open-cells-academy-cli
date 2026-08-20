@@ -54,6 +54,12 @@ function messageKeys(name) {
     demoResolution: `${name}.demo.resolution`,
     demoViewport: `${name}.demo.viewport`,
     demoEvents: `${name}.demo.events`,
+    demoEventLabel: `${name}.demo.events.label`,
+    demoEventLatest: `${name}.demo.events.latest`,
+    demoEventHistory: `${name}.demo.events.history`,
+    demoClearEvents: `${name}.demo.events.clear`,
+    demoExportEvents: `${name}.demo.events.export`,
+    demoEventFilter: `${name}.demo.events.filter`,
     demoEventsEmpty: `${name}.demo.events.empty`,
     demoCustomWidth: `${name}.demo.custom.width`,
     demoCustomHeight: `${name}.demo.custom.height`,
@@ -65,6 +71,11 @@ function messageKeys(name) {
     demoDesktop: `${name}.demo.desktop`,
     demoLargeDesktop: `${name}.demo.large-desktop`,
     demoOpen: `${name}.demo.open`,
+    demoPatternLabel: `${name}.demo.pattern.label`,
+    demoPatternDots: `${name}.demo.pattern.dots`,
+    demoPatternGrid: `${name}.demo.pattern.grid`,
+    demoPatternClean: `${name}.demo.pattern.clean`,
+    demoBrandBadge: `${name}.demo.brand-badge`,
     demoCopy: `${name}.demo.copy`,
     demoCopied: `${name}.demo.copied`,
     demoScope: `${name}.demo.scope`,
@@ -108,6 +119,12 @@ function componentCatalogs(name, keys) {
       [keys.demoResolution]: 'Viewport preset',
       [keys.demoViewport]: 'Demo viewport',
       [keys.demoEvents]: 'Events',
+      [keys.demoEventLabel]: 'Event:',
+      [keys.demoEventLatest]: 'Latest event',
+      [keys.demoEventHistory]: 'Event history',
+      [keys.demoClearEvents]: 'Clear',
+      [keys.demoExportEvents]: 'Export',
+      [keys.demoEventFilter]: 'Filter events…',
       [keys.demoEventsEmpty]: 'No events captured yet.',
       [keys.demoCustomWidth]: 'Width',
       [keys.demoCustomHeight]: 'Height',
@@ -119,6 +136,11 @@ function componentCatalogs(name, keys) {
       [keys.demoDesktop]: 'Desktop',
       [keys.demoLargeDesktop]: 'Large Desktop',
       [keys.demoOpen]: 'Open in new tab',
+      [keys.demoPatternLabel]: 'Background:',
+      [keys.demoPatternDots]: 'Dots',
+      [keys.demoPatternGrid]: 'Grid',
+      [keys.demoPatternClean]: 'Clean',
+      [keys.demoBrandBadge]: 'SDK',
       [keys.demoCopy]: 'Copy',
       [keys.demoCopied]: 'Copied',
       [keys.demoScope]: 'Scoped composition',
@@ -157,6 +179,12 @@ function componentCatalogs(name, keys) {
       [keys.demoResolution]: 'Preajuste de viewport',
       [keys.demoViewport]: 'Viewport de demo',
       [keys.demoEvents]: 'Eventos',
+      [keys.demoEventLabel]: 'Evento:',
+      [keys.demoEventLatest]: 'Último evento',
+      [keys.demoEventHistory]: 'Historial de eventos',
+      [keys.demoClearEvents]: 'Limpiar',
+      [keys.demoExportEvents]: 'Exportar',
+      [keys.demoEventFilter]: 'Filtrar eventos…',
       [keys.demoEventsEmpty]: 'Aún no se han capturado eventos.',
       [keys.demoCustomWidth]: 'Ancho',
       [keys.demoCustomHeight]: 'Alto',
@@ -168,6 +196,11 @@ function componentCatalogs(name, keys) {
       [keys.demoDesktop]: 'Escritorio',
       [keys.demoLargeDesktop]: 'Escritorio grande',
       [keys.demoOpen]: 'Abrir en una pestaña nueva',
+      [keys.demoPatternLabel]: 'Fondo:',
+      [keys.demoPatternDots]: 'Puntos',
+      [keys.demoPatternGrid]: 'Retícula',
+      [keys.demoPatternClean]: 'Limpio',
+      [keys.demoBrandBadge]: 'SDK',
       [keys.demoCopy]: 'Copiar',
       [keys.demoCopied]: 'Copiado',
       [keys.demoScope]: 'Composición aislada',
@@ -229,6 +262,10 @@ export class ${className} extends widgetMixin(ScopedElementsMixin(LitElement)) {
 
   render() {
     return html\`<article>
+      <header>
+        <span class="status">● \${this.t(${JSON.stringify(keys.demoCaseBasic)})}</span>
+        <span class="identifier">#01</span>
+      </header>
       <academy-type-text .text=\${this.t(${JSON.stringify(keys.heading)})}></academy-type-text>
       <slot></slot>
       <academy-button-default .text=\${this.t(${JSON.stringify(keys.continue)})} @click=\${this.notifyContinue}></academy-button-default>
@@ -238,10 +275,15 @@ export class ${className} extends widgetMixin(ScopedElementsMixin(LitElement)) {
 `;
 }
 
-const COMPONENT_STYLE_RULES = `  :host { display: block; max-width: 32rem; color: #072146; font: 16px/1.5 system-ui, sans-serif; }
-  article { display: grid; gap: 1rem; border: 1px solid #d4edfc; border-radius: .5rem; padding: 1rem; background: white; }
-  academy-type-text { display: block; font-size: 1.5rem; font-weight: 600; }
-  academy-button-default { justify-self: start; }`;
+const COMPONENT_STYLE_RULES = `  :host { display: block; width: min(100%, 35rem); color: #0f172a; font: 16px/1.5 "Plus Jakarta Sans", system-ui, sans-serif; }
+  article { display: grid; gap: 1.75rem; border: 1px solid #e2e8f0; border-radius: 1.25rem; padding: 2rem; background: #fff; box-shadow: 0 10px 25px -12px rgb(15 23 42 / 22%); }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .status, .identifier { display: inline-flex; align-items: center; border-radius: 999px; padding: .28rem .65rem; font-size: .72rem; font-weight: 700; }
+  .status { border: 1px solid #a7f3d0; background: #ecfdf5; color: #047857; }
+  .identifier { background: #f1f5f9; color: #475569; font-family: ui-monospace, monospace; }
+  academy-type-text { display: block; font-size: clamp(1.55rem, 4vw, 2rem); font-weight: 700; letter-spacing: -.035em; }
+  academy-button-default { display: block; width: 100%; }
+  ::slotted(*) { margin: 0; color: #64748b; }`;
 
 function scssSource() {
   return `${COMPONENT_STYLE_RULES}\n`;
@@ -297,12 +339,12 @@ function basicDemoSource(name) {
     <title>${name} basic demo</title>
     <style>
       :root { color-scheme: light; }
-      html, body { margin: 0; min-width: 320px; min-height: 100%; }
-      body { background: #f8f3df; color: #173f35; font-family: "Avenir Next", "Trebuchet MS", sans-serif; }
-      main[data-demo-root] { min-height: 100vh; padding: clamp(1.2rem, 5vw, 3.5rem); display: grid; place-items: center; box-sizing: border-box; }
-      .inner-demo { display: grid; gap: 1.25rem; width: min(100%, 34rem); }
-      .inner-demo-event { display: block; min-height: 1.2rem; color: #537368; font: .78rem/1.4 ui-monospace, monospace; }
-      ${name} { display: block; }
+      html, body { margin: 0; min-width: 280px; min-height: 100%; background: transparent; }
+      body { color: #0f172a; font-family: "Plus Jakarta Sans", system-ui, sans-serif; }
+      main[data-demo-root] { min-height: 100vh; padding: clamp(1rem, 5vw, 3rem); display: grid; place-items: center; box-sizing: border-box; }
+      .inner-demo { display: grid; width: min(100%, 35rem); }
+      .inner-demo-event { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+      ${name} { display: block; width: 100%; }
     </style>
   </head>
   <body>
@@ -366,6 +408,12 @@ function publishLabels() {
       resolution: intlMsg.t(${JSON.stringify(keys.demoResolution)}),
       viewport: intlMsg.t(${JSON.stringify(keys.demoViewport)}),
       events: intlMsg.t(${JSON.stringify(keys.demoEvents)}),
+      eventLabel: intlMsg.t(${JSON.stringify(keys.demoEventLabel)}),
+      eventLatest: intlMsg.t(${JSON.stringify(keys.demoEventLatest)}),
+      eventHistory: intlMsg.t(${JSON.stringify(keys.demoEventHistory)}),
+      clearEvents: intlMsg.t(${JSON.stringify(keys.demoClearEvents)}),
+      exportEvents: intlMsg.t(${JSON.stringify(keys.demoExportEvents)}),
+      eventFilter: intlMsg.t(${JSON.stringify(keys.demoEventFilter)}),
       eventsEmpty: intlMsg.t(${JSON.stringify(keys.demoEventsEmpty)}),
       customWidth: intlMsg.t(${JSON.stringify(keys.demoCustomWidth)}),
       customHeight: intlMsg.t(${JSON.stringify(keys.demoCustomHeight)}),
@@ -377,6 +425,11 @@ function publishLabels() {
       desktop: intlMsg.t(${JSON.stringify(keys.demoDesktop)}),
       largeDesktop: intlMsg.t(${JSON.stringify(keys.demoLargeDesktop)}),
       open: intlMsg.t(${JSON.stringify(keys.demoOpen)}),
+      patternLabel: intlMsg.t(${JSON.stringify(keys.demoPatternLabel)}),
+      patternDots: intlMsg.t(${JSON.stringify(keys.demoPatternDots)}),
+      patternGrid: intlMsg.t(${JSON.stringify(keys.demoPatternGrid)}),
+      patternClean: intlMsg.t(${JSON.stringify(keys.demoPatternClean)}),
+      brandBadge: intlMsg.t(${JSON.stringify(keys.demoBrandBadge)}),
       copy: intlMsg.t(${JSON.stringify(keys.demoCopy)}),
       copied: intlMsg.t(${JSON.stringify(keys.demoCopied)}),
       scope: intlMsg.t(${JSON.stringify(keys.demoScope)}),
@@ -720,7 +773,7 @@ test('runs the generated demo cases, viewport controls, locale switch, and event
   await expect(helper).toBeVisible();
   await expect(helper.getByRole('combobox', { name: 'Case' })).toHaveCount(1);
   await helper.getByRole('button', { name: 'Desktop', exact: true }).click();
-  await expect(helper.locator('[data-device-frame]')).toHaveCSS('width', '960px');
+  await expect(helper.locator('[data-device-frame]')).toHaveCSS('width', '768px');
 
   const demo = page.frameLocator('iframe[data-demo-frame]');
   await expect(demo.locator('${name}')).toBeVisible();

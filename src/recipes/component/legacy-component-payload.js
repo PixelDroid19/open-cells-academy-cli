@@ -48,6 +48,12 @@ function catalog(name, language) {
     [`${prefix}.resolution`]: spanish ? 'Preajuste de viewport' : 'Viewport preset',
     [`${prefix}.viewport`]: spanish ? 'Viewport de demo' : 'Demo viewport',
     [`${prefix}.events`]: spanish ? 'Eventos' : 'Events',
+    [`${prefix}.events.label`]: spanish ? 'Evento:' : 'Event:',
+    [`${prefix}.events.latest`]: spanish ? 'Último evento' : 'Latest event',
+    [`${prefix}.events.history`]: spanish ? 'Historial de eventos' : 'Event history',
+    [`${prefix}.events.clear`]: spanish ? 'Limpiar' : 'Clear',
+    [`${prefix}.events.export`]: spanish ? 'Exportar' : 'Export',
+    [`${prefix}.events.filter`]: spanish ? 'Filtrar eventos…' : 'Filter events…',
     [`${prefix}.events.empty`]: spanish ? 'Aún no se han capturado eventos.' : 'No events captured yet.',
     [`${prefix}.custom.width`]: spanish ? 'Ancho' : 'Width',
     [`${prefix}.custom.height`]: spanish ? 'Alto' : 'Height',
@@ -59,6 +65,11 @@ function catalog(name, language) {
     [`${prefix}.desktop`]: spanish ? 'Escritorio' : 'Desktop',
     [`${prefix}.large-desktop`]: spanish ? 'Escritorio grande' : 'Large Desktop',
     [`${prefix}.open`]: spanish ? 'Abrir en una pestaña nueva' : 'Open in new tab',
+    [`${prefix}.pattern.label`]: spanish ? 'Fondo:' : 'Background:',
+    [`${prefix}.pattern.dots`]: spanish ? 'Puntos' : 'Dots',
+    [`${prefix}.pattern.grid`]: spanish ? 'Retícula' : 'Grid',
+    [`${prefix}.pattern.clean`]: spanish ? 'Limpio' : 'Clean',
+    [`${prefix}.brand-badge`]: 'SDK',
     [`${prefix}.copy`]: spanish ? 'Copiar' : 'Copy',
     [`${prefix}.copied`]: spanish ? 'Copiado' : 'Copied',
     [`${prefix}.scope`]: spanish ? 'Composición aislada' : 'Scoped composition',
@@ -89,7 +100,12 @@ export class ${klass} extends LitElement {
   }
 
   static get styles() {
-    return css\` :host { display: block; } \`;
+    return css\`
+      :host { display: block; }
+      button { width: 100%; min-height: 3rem; border: 0; border-radius: .9rem; padding: .75rem 1.25rem; background: #0f172a; color: #fff; font: 700 .9rem/1 system-ui, sans-serif; cursor: pointer; }
+      button:hover { background: #1e293b; }
+      button:focus-visible { outline: 3px solid #7dd3fc; outline-offset: 3px; }
+    \`;
   }
 
   constructor() {
@@ -156,12 +172,17 @@ function basicDemoSource(name) {
     <title>${name} basic demo</title>
     <style>
       :root { color-scheme: light; }
-      html, body { margin: 0; min-width: 320px; min-height: 100%; }
-      body { background: #f8f3df; color: #173f35; font-family: "Avenir Next", "Trebuchet MS", sans-serif; }
-      main[data-demo-root] { min-height: 100vh; padding: clamp(1.2rem, 5vw, 3.5rem); display: grid; place-items: center; box-sizing: border-box; }
-      .inner-demo { display: grid; gap: 1.25rem; width: min(100%, 34rem); }
-      .inner-demo-event { display: block; min-height: 1.2rem; color: #537368; font: .78rem/1.4 ui-monospace, monospace; }
-      ${name} { display: block; }
+      html, body { margin: 0; min-width: 280px; min-height: 100%; background: transparent; }
+      body { color: #0f172a; font-family: "Plus Jakarta Sans", system-ui, sans-serif; }
+      main[data-demo-root] { min-height: 100vh; padding: clamp(1rem, 5vw, 3rem); display: grid; place-items: center; box-sizing: border-box; }
+      .inner-demo { display: grid; gap: 1.75rem; width: min(100%, 35rem); border: 1px solid #e2e8f0; border-radius: 1.25rem; padding: 2rem; background: #fff; box-shadow: 0 10px 25px -12px rgb(15 23 42 / 22%); box-sizing: border-box; }
+      .inner-demo-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+      .inner-demo-status, .inner-demo-id { display: inline-flex; align-items: center; border-radius: 999px; padding: .28rem .65rem; font-size: .72rem; font-weight: 700; }
+      .inner-demo-status { border: 1px solid #a7f3d0; background: #ecfdf5; color: #047857; }
+      .inner-demo-id { background: #f1f5f9; color: #475569; font-family: ui-monospace, monospace; }
+      .inner-demo-title { margin: 0; font-size: clamp(1.55rem, 4vw, 2rem); line-height: 1.2; letter-spacing: -.035em; }
+      .inner-demo-event { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+      ${name} { display: block; width: 100%; }
     </style>
     <script>
       window.IntlMsg = window.IntlMsg || {};
@@ -185,14 +206,24 @@ const root = document.querySelector('[data-demo-root]');
 const component = document.createElement('${name}');
 const eventOutput = document.createElement('output');
 const shell = document.createElement('section');
+const shellHeader = document.createElement('header');
+const shellStatus = document.createElement('span');
+const shellId = document.createElement('span');
+const shellTitle = document.createElement('h2');
 const labelKey = '${name}.label';
 const prefix = '${name}.demo';
 
 shell.className = 'inner-demo';
+shellHeader.className = 'inner-demo-header';
+shellStatus.className = 'inner-demo-status';
+shellId.className = 'inner-demo-id';
+shellTitle.className = 'inner-demo-title';
+shellId.textContent = '#01';
 eventOutput.className = 'inner-demo-event';
 eventOutput.dataset.event = '';
 eventOutput.setAttribute('aria-live', 'polite');
-shell.append(component, eventOutput);
+shellHeader.append(shellStatus, shellId);
+shell.append(shellHeader, shellTitle, component, eventOutput);
 
 function t(language, suffix) {
   const key = prefix + '.' + suffix;
@@ -221,6 +252,12 @@ function labels(language) {
     resolution: t(language, 'resolution'),
     viewport: t(language, 'viewport'),
     events: t(language, 'events'),
+    eventLabel: t(language, 'events.label'),
+    eventLatest: t(language, 'events.latest'),
+    eventHistory: t(language, 'events.history'),
+    clearEvents: t(language, 'events.clear'),
+    exportEvents: t(language, 'events.export'),
+    eventFilter: t(language, 'events.filter'),
     eventsEmpty: t(language, 'events.empty'),
     customWidth: t(language, 'custom.width'),
     customHeight: t(language, 'custom.height'),
@@ -232,6 +269,11 @@ function labels(language) {
     desktop: t(language, 'desktop'),
     largeDesktop: t(language, 'large-desktop'),
     open: t(language, 'open'),
+    patternLabel: t(language, 'pattern.label'),
+    patternDots: t(language, 'pattern.dots'),
+    patternGrid: t(language, 'pattern.grid'),
+    patternClean: t(language, 'pattern.clean'),
+    brandBadge: t(language, 'brand-badge'),
     copy: t(language, 'copy'),
     copied: t(language, 'copied'),
     scope: t(language, 'scope'),
@@ -260,6 +302,8 @@ function setLanguage(language) {
   const selectedLanguage = language === 'es' ? 'es' : 'en';
   document.documentElement.lang = selectedLanguage;
   component.label = catalogs[selectedLanguage]?.[labelKey] ?? catalogs.en[labelKey];
+  shellStatus.textContent = '● ' + t(selectedLanguage, 'case.basic');
+  shellTitle.textContent = component.label;
   eventOutput.textContent = t(selectedLanguage, 'event.empty');
   root.replaceChildren(shell);
   document.title = t(selectedLanguage, 'title');
