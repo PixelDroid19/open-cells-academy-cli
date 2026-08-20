@@ -47,7 +47,17 @@ const COMMAND_CONTRACTS = [
   },
   {
     name: 'app:create',
-    options: [{ name: 'scaffold', aliases: ['-s', '--scaffold'], type: 'jsonOrPath', required: false }]
+    options: [
+      { name: 'e2e', aliases: ['--e2e'], type: 'boolean', defaultValue: false, required: false },
+      { name: 'scaffold', aliases: ['-s', '--scaffold'], type: 'jsonOrPath', required: false },
+      {
+        name: 'installDeps',
+        aliases: ['--install-deps', '--installDeps'],
+        type: 'boolean',
+        defaultValue: false,
+        required: false
+      }
+    ]
   },
   {
     name: 'app:dev',

@@ -1,5 +1,6 @@
 import { ScaffoldPlan } from '../../domain/scaffold-plan.js';
 import { typedError } from '../../domain/workspace-session.js';
+import { ACADEMY_DEMO_HELPER_SOURCE } from '../../../templates/components/academy-demo-helper-source.js';
 
 function stableJson(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
@@ -38,13 +39,44 @@ function messageKeys(name) {
     demoEventEmpty: `${name}.demo.event.empty`,
     demoCaseBasic: `${name}.demo.case.basic`,
     demoCaseBasicDescription: `${name}.demo.case.basic.description`,
+    demoStatus: `${name}.demo.status`,
+    demoLivePreview: `${name}.demo.live-preview`,
+    demoEventIntro: `${name}.demo.event-intro`,
+    demoInteractive: `${name}.demo.interactive`,
+    demoDocumentation: `${name}.demo.documentation`,
+    demoDocumentationDescription: `${name}.demo.documentation.description`,
+    demoVisual: `${name}.demo.visual`,
+    demoCode: `${name}.demo.code`,
+    demoCaseLabel: `${name}.demo.case`,
+    demoLanguageLabel: `${name}.demo.language`,
+    demoHideUi: `${name}.demo.hide-ui`,
+    demoShowUi: `${name}.demo.show-ui`,
     demoResolution: `${name}.demo.resolution`,
     demoViewport: `${name}.demo.viewport`,
     demoEvents: `${name}.demo.events`,
     demoEventsEmpty: `${name}.demo.events.empty`,
     demoCustomWidth: `${name}.demo.custom.width`,
     demoCustomHeight: `${name}.demo.custom.height`,
-    demoApply: `${name}.demo.apply`
+    demoApply: `${name}.demo.apply`,
+    demoResponsive: `${name}.demo.responsive`,
+    demoFluid: `${name}.demo.fluid`,
+    demoMobile: `${name}.demo.mobile`,
+    demoTablet: `${name}.demo.tablet`,
+    demoDesktop: `${name}.demo.desktop`,
+    demoLargeDesktop: `${name}.demo.large-desktop`,
+    demoOpen: `${name}.demo.open`,
+    demoCopy: `${name}.demo.copy`,
+    demoCopied: `${name}.demo.copied`,
+    demoScope: `${name}.demo.scope`,
+    demoScopeDescription: `${name}.demo.scope.description`,
+    demoApi: `${name}.demo.api`,
+    demoApiDescription: `${name}.demo.api.description`,
+    demoApiColumn: `${name}.demo.api-column`,
+    demoContractColumn: `${name}.demo.contract-column`,
+    demoEvidenceColumn: `${name}.demo.evidence-column`,
+    demoHtmlSnippet: `${name}.demo.html-snippet`,
+    demoJsSnippet: `${name}.demo.js-snippet`,
+    demoNoCase: `${name}.demo.no-case`
   });
 }
 
@@ -61,13 +93,44 @@ function componentCatalogs(name, keys) {
       [keys.demoEventEmpty]: 'Activate the component to see its event.',
       [keys.demoCaseBasic]: 'Basic',
       [keys.demoCaseBasicDescription]: 'A first case with language, event, and scoped component controls.',
+      [keys.demoStatus]: 'Interactive specimen',
+      [keys.demoLivePreview]: 'Live preview',
+      [keys.demoEventIntro]: 'Events emitted by the component appear here as an inspectable stream.',
+      [keys.demoInteractive]: 'Interactive demo',
+      [keys.demoDocumentation]: 'Documentation',
+      [keys.demoDocumentationDescription]: 'A compact reference for the component contract used in this demo.',
+      [keys.demoVisual]: 'Visual',
+      [keys.demoCode]: 'Code',
+      [keys.demoCaseLabel]: 'Case',
+      [keys.demoLanguageLabel]: 'Language',
+      [keys.demoHideUi]: 'Hide UI',
+      [keys.demoShowUi]: 'Show UI',
       [keys.demoResolution]: 'Viewport preset',
       [keys.demoViewport]: 'Demo viewport',
       [keys.demoEvents]: 'Events',
       [keys.demoEventsEmpty]: 'No events captured yet.',
       [keys.demoCustomWidth]: 'Width',
       [keys.demoCustomHeight]: 'Height',
-      [keys.demoApply]: 'Apply'
+      [keys.demoApply]: 'Apply',
+      [keys.demoResponsive]: 'Responsive',
+      [keys.demoFluid]: 'Fluid',
+      [keys.demoMobile]: 'Mobile',
+      [keys.demoTablet]: 'Tablet',
+      [keys.demoDesktop]: 'Desktop',
+      [keys.demoLargeDesktop]: 'Large Desktop',
+      [keys.demoOpen]: 'Open in new tab',
+      [keys.demoCopy]: 'Copy',
+      [keys.demoCopied]: 'Copied',
+      [keys.demoScope]: 'Scoped composition',
+      [keys.demoScopeDescription]: 'The component registers child controls in a local scoped registry.',
+      [keys.demoApi]: 'Component contract',
+      [keys.demoApiDescription]: 'Use public properties, translated labels and emitted events.',
+      [keys.demoApiColumn]: 'API',
+      [keys.demoContractColumn]: 'Cells contract',
+      [keys.demoEvidenceColumn]: 'Demo evidence',
+      [keys.demoHtmlSnippet]: 'HTML usage',
+      [keys.demoJsSnippet]: 'JavaScript usage',
+      [keys.demoNoCase]: 'No demo case available'
     }),
     es: Object.freeze({
       [keys.heading]: `${displayName} listo`,
@@ -79,13 +142,44 @@ function componentCatalogs(name, keys) {
       [keys.demoEventEmpty]: 'Activa el componente para ver su evento.',
       [keys.demoCaseBasic]: 'Básico',
       [keys.demoCaseBasicDescription]: 'Un primer caso con idioma, eventos y controles de componentes aislados.',
+      [keys.demoStatus]: 'Ejemplo interactivo',
+      [keys.demoLivePreview]: 'Vista previa',
+      [keys.demoEventIntro]: 'Los eventos emitidos por el componente aparecen aquí como un flujo inspeccionable.',
+      [keys.demoInteractive]: 'Demo interactiva',
+      [keys.demoDocumentation]: 'Documentación',
+      [keys.demoDocumentationDescription]: 'Una referencia compacta del contrato del componente usado en esta demo.',
+      [keys.demoVisual]: 'Visual',
+      [keys.demoCode]: 'Código',
+      [keys.demoCaseLabel]: 'Caso',
+      [keys.demoLanguageLabel]: 'Idioma',
+      [keys.demoHideUi]: 'Ocultar interfaz',
+      [keys.demoShowUi]: 'Mostrar interfaz',
       [keys.demoResolution]: 'Preajuste de viewport',
       [keys.demoViewport]: 'Viewport de demo',
       [keys.demoEvents]: 'Eventos',
       [keys.demoEventsEmpty]: 'Aún no se han capturado eventos.',
       [keys.demoCustomWidth]: 'Ancho',
       [keys.demoCustomHeight]: 'Alto',
-      [keys.demoApply]: 'Aplicar'
+      [keys.demoApply]: 'Aplicar',
+      [keys.demoResponsive]: 'Adaptable',
+      [keys.demoFluid]: 'Fluido',
+      [keys.demoMobile]: 'Móvil',
+      [keys.demoTablet]: 'Tableta',
+      [keys.demoDesktop]: 'Escritorio',
+      [keys.demoLargeDesktop]: 'Escritorio grande',
+      [keys.demoOpen]: 'Abrir en una pestaña nueva',
+      [keys.demoCopy]: 'Copiar',
+      [keys.demoCopied]: 'Copiado',
+      [keys.demoScope]: 'Composición aislada',
+      [keys.demoScopeDescription]: 'El componente registra sus controles secundarios en un registro local aislado.',
+      [keys.demoApi]: 'Contrato del componente',
+      [keys.demoApiDescription]: 'Usa propiedades públicas, etiquetas traducidas y eventos emitidos.',
+      [keys.demoApiColumn]: 'API',
+      [keys.demoContractColumn]: 'Contrato Cells',
+      [keys.demoEvidenceColumn]: 'Evidencia en la demo',
+      [keys.demoHtmlSnippet]: 'Uso en HTML',
+      [keys.demoJsSnippet]: 'Uso en JavaScript',
+      [keys.demoNoCase]: 'No hay casos de demo disponibles'
     })
   });
 }
@@ -185,8 +279,8 @@ function demoIndexSource(name) {
     <title>${name} demo</title>
   </head>
   <body>
-    <academy-demo-helper events="${name}-continue">
-      <academy-demo-case heading="Basic" description="A first component case with language and event controls." src="./basic.html"></academy-demo-case>
+    <academy-demo-helper component-tag="${name}" events="${name}-continue">
+      <academy-demo-case heading="Basic" description="A first component case with language and event controls." heading-key="caseBasic" description-key="caseBasicDescription" src="./basic.html"></academy-demo-case>
     </academy-demo-helper>
     <script type="module" src="./demo-build.js"></script>
   </body>
@@ -201,6 +295,15 @@ function basicDemoSource(name) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>${name} basic demo</title>
+    <style>
+      :root { color-scheme: light; }
+      html, body { margin: 0; min-width: 320px; min-height: 100%; }
+      body { background: #f8f3df; color: #173f35; font-family: "Avenir Next", "Trebuchet MS", sans-serif; }
+      main[data-demo-root] { min-height: 100vh; padding: clamp(1.2rem, 5vw, 3.5rem); display: grid; place-items: center; box-sizing: border-box; }
+      .inner-demo { display: grid; gap: 1.25rem; width: min(100%, 34rem); }
+      .inner-demo-event { display: block; min-height: 1.2rem; color: #537368; font: .78rem/1.4 ui-monospace, monospace; }
+      ${name} { display: block; }
+    </style>
   </head>
   <body>
     <script>
@@ -221,195 +324,7 @@ function demoBuildSource() {
 }
 
 export function demoHelperSource() {
-  return `const DEFAULT_LABELS = Object.freeze({
-  caseBasic: 'Basic',
-  caseBasicDescription: 'A first component case.',
-  resolution: 'Viewport preset',
-  viewport: 'Demo viewport',
-  events: 'Events',
-  eventsEmpty: 'No events captured yet.',
-  customWidth: 'Width',
-  customHeight: 'Height',
-  apply: 'Apply'
-});
-
-const RESOLUTIONS = Object.freeze({
-  responsive: Object.freeze({ width: '100%', height: '480px' }),
-  desktop: Object.freeze({ width: '1024px', height: '720px' }),
-  tablet: Object.freeze({ width: '768px', height: '900px' }),
-  mobile: Object.freeze({ width: '390px', height: '844px' })
-});
-
-function safeLabels(value) {
-  return value && typeof value === 'object' ? { ...DEFAULT_LABELS, ...value } : { ...DEFAULT_LABELS };
-}
-
-class AcademyDemoCase extends HTMLElement {
-  static get observedAttributes() {
-    return ['heading', 'description', 'src'];
-  }
-}
-
-if (customElements.get('academy-demo-case') === undefined) {
-  customElements.define('academy-demo-case', AcademyDemoCase);
-}
-
-class AcademyDemoHelper extends HTMLElement {
-  constructor() {
-    super();
-    this.selected = 0;
-    this.resolution = 'responsive';
-    this.customViewportWidth = '';
-    this.customViewportHeight = '';
-    this.labels = safeLabels();
-    this.events = [];
-    this.cases = [];
-    this.onMessage = event => {
-      const iframe = this.querySelector('iframe');
-      if (iframe === null || event.source !== iframe.contentWindow || event.origin !== window.location.origin) return;
-      const message = event.data;
-      if (!message || message.source !== 'academy-demo') return;
-      if (message.kind === 'labels') {
-        this.labels = safeLabels(message.labels);
-        if (this.cases[0] !== undefined) {
-          this.cases[0].heading = this.labels.caseBasic;
-          this.cases[0].description = this.labels.caseBasicDescription;
-        }
-        this.updateLabels();
-        return;
-      }
-      if (message.kind !== 'event' || typeof message.eventType !== 'string') return;
-      const allowed = (this.getAttribute('events') ?? '').split(',').map(value => value.trim()).filter(Boolean);
-      if (allowed.length > 0 && !allowed.includes(message.eventType)) return;
-      this.events = [{ type: message.eventType, detail: message.detail }, ...this.events].slice(0, 20);
-      this.renderEvents();
-    };
-  }
-
-  connectedCallback() {
-    this.cases = [...this.querySelectorAll('academy-demo-case')].map(candidate => ({
-      heading: candidate.getAttribute('heading') ?? this.labels.caseBasic,
-      description: candidate.getAttribute('description') ?? '',
-      src: candidate.getAttribute('src') ?? './basic.html'
-    }));
-    window.addEventListener('message', this.onMessage);
-    this.render();
-  }
-
-  disconnectedCallback() {
-    window.removeEventListener('message', this.onMessage);
-  }
-
-  viewport() {
-    const preset = RESOLUTIONS[this.resolution] ?? RESOLUTIONS.responsive;
-    return {
-      width: this.customViewportWidth || preset.width,
-      height: this.customViewportHeight || preset.height
-    };
-  }
-
-  applyViewport() {
-    const frame = this.querySelector('[data-demo-frame]');
-    if (frame === null) return;
-    const viewport = this.viewport();
-    frame.style.width = viewport.width;
-    frame.style.height = viewport.height;
-    frame.setAttribute('aria-label', this.labels.viewport + ': ' + viewport.width + ' x ' + viewport.height);
-  }
-
-  selectCase(index) {
-    this.selected = Math.max(0, Math.min(index, this.cases.length - 1));
-    this.events = [];
-    this.render();
-  }
-
-  renderEvents() {
-    const list = this.querySelector('[data-demo-events]');
-    if (list === null) return;
-    list.replaceChildren();
-    if (this.events.length === 0) {
-      const empty = document.createElement('li');
-      empty.textContent = this.labels.eventsEmpty;
-      list.append(empty);
-      return;
-    }
-    for (const event of this.events) {
-      const item = document.createElement('li');
-      item.textContent = event.type + (event.detail === undefined ? '' : ' ' + JSON.stringify(event.detail));
-      list.append(item);
-    }
-  }
-
-  updateLabels() {
-    const region = this.querySelector('[data-demo-region]');
-    const cases = this.querySelector('[data-demo-cases]');
-    const caseButton = this.querySelector('[data-case="0"]');
-    const description = this.querySelector('[data-demo-description]');
-    const resolution = this.querySelector('[data-resolution]');
-    const width = this.querySelector('[data-width]');
-    const height = this.querySelector('[data-height]');
-    const apply = this.querySelector('[data-apply]');
-    const viewport = this.querySelector('[data-demo-frame]');
-    const eventsHeading = this.querySelector('[data-demo-events-heading]');
-    if (region !== null) region.setAttribute('aria-label', this.labels.caseBasic);
-    if (cases !== null) cases.setAttribute('aria-label', this.labels.caseBasic);
-    if (caseButton !== null) caseButton.textContent = this.labels.caseBasic;
-    if (description !== null) description.textContent = this.cases[0]?.description ?? this.labels.caseBasicDescription;
-    if (resolution !== null) resolution.setAttribute('aria-label', this.labels.resolution);
-    if (width !== null) width.setAttribute('aria-label', this.labels.customWidth);
-    if (height !== null) height.setAttribute('aria-label', this.labels.customHeight);
-    if (apply !== null) apply.textContent = this.labels.apply;
-    if (viewport !== null) viewport.setAttribute('title', this.labels.viewport);
-    if (eventsHeading !== null) eventsHeading.textContent = this.labels.events;
-    this.applyViewport();
-    this.renderEvents();
-  }
-
-  render() {
-    const labels = this.labels;
-    const selectedCase = this.cases[this.selected] ?? { heading: labels.caseBasic, description: labels.caseBasicDescription, src: './basic.html' };
-    const buttons = this.cases.map((candidate, index) => '<button type="button" data-case="' + index + '" aria-pressed="' + (index === this.selected) + '">' + candidate.heading + '</button>').join('');
-    this.innerHTML = '<style>' +
-      ':host{display:block;color:#172554;font:16px/1.45 system-ui,sans-serif}.academy-demo{display:grid;gap:1rem;max-width:72rem;margin:0 auto;padding:1rem}.academy-demo-controls{display:flex;flex-wrap:wrap;gap:.75rem;align-items:end;padding:.75rem;border:1px solid #cbd5e1;border-radius:.5rem;background:#f8fafc}.academy-demo-controls label{display:grid;gap:.25rem;font-size:.85rem}.academy-demo-controls input,.academy-demo-controls select,.academy-demo-controls button,.academy-demo nav button{font:inherit;padding:.45rem .65rem;border:1px solid #94a3b8;border-radius:.3rem;background:white}.academy-demo-controls button,.academy-demo nav button[aria-pressed="true"]{color:white;background:#0f766e;border-color:#0f766e}.academy-demo nav{display:flex;gap:.5rem;flex-wrap:wrap}.academy-demo-frame-wrap{display:grid;place-items:start;overflow:auto;min-height:12rem;padding:1rem;border:1px solid #cbd5e1;border-radius:.5rem;background:#e2e8f0}.academy-demo-frame-wrap iframe{display:block;min-width:240px;max-width:none;border:0;background:white;box-shadow:0 1px 4px #0f172a33}aside{border-top:1px solid #cbd5e1}aside ol{min-height:2rem;padding-left:1.5rem}' +
-      '</style><section class="academy-demo" data-demo-region aria-label="' + labels.caseBasic + '">' +
-      '<nav data-demo-cases aria-label="' + labels.caseBasic + '">' + buttons + '</nav>' +
-      '<div class="academy-demo-controls">' +
-      '<label>' + labels.resolution + ' <select data-resolution aria-label="' + labels.resolution + '">' +
-      '<option value="responsive">responsive</option><option value="desktop">desktop</option><option value="tablet">tablet</option><option value="mobile">mobile</option></select></label>' +
-      '<label>' + labels.customWidth + ' <input data-width type="number" min="240" max="1920" placeholder="auto"></label>' +
-      '<label>' + labels.customHeight + ' <input data-height type="number" min="240" max="1400" placeholder="auto"></label>' +
-      '<button type="button" data-apply>' + labels.apply + '</button>' +
-      '</div>' +
-      '<p data-demo-description>' + selectedCase.description + '</p>' +
-      '<div data-demo-frame-wrap><iframe data-demo-frame title="' + selectedCase.heading + '" src="' + selectedCase.src + '"></iframe></div>' +
-      '<aside><h2 data-demo-events-heading>' + labels.events + '</h2><ol data-demo-events></ol></aside>' +
-      '</section>';
-    this.querySelector('[data-resolution]').value = this.resolution;
-    this.querySelector('[data-width]').value = this.customViewportWidth;
-    this.querySelector('[data-height]').value = this.customViewportHeight;
-    for (const button of this.querySelectorAll('[data-case]')) {
-      button.addEventListener('click', () => this.selectCase(Number(button.dataset.case)));
-    }
-    this.querySelector('[data-resolution]').addEventListener('change', event => {
-      this.resolution = event.currentTarget.value;
-      this.customViewportWidth = '';
-      this.customViewportHeight = '';
-      this.applyViewport();
-    });
-    this.querySelector('[data-apply]').addEventListener('click', () => {
-      this.customViewportWidth = this.querySelector('[data-width]').value;
-      this.customViewportHeight = this.querySelector('[data-height]').value;
-      this.applyViewport();
-    });
-    this.applyViewport();
-    this.renderEvents();
-  }
-}
-
-if (customElements.get('academy-demo-helper') === undefined) {
-  customElements.define('academy-demo-helper', AcademyDemoHelper);
-}
-`;
+  return ACADEMY_DEMO_HELPER_SOURCE;
 }
 
 function demoSource(name, keys) {
@@ -429,24 +344,53 @@ function publishLabels() {
   window.parent.postMessage({
     source: 'academy-demo',
     kind: 'labels',
+    language: document.documentElement.lang,
     labels: {
+      title: intlMsg.t(${JSON.stringify(keys.demoTitle)}),
+      status: intlMsg.t(${JSON.stringify(keys.demoStatus)}),
       caseBasic: intlMsg.t(${JSON.stringify(keys.demoCaseBasic)}),
       caseBasicDescription: intlMsg.t(${JSON.stringify(keys.demoCaseBasicDescription)}),
+      livePreview: intlMsg.t(${JSON.stringify(keys.demoLivePreview)}),
+      eventIntro: intlMsg.t(${JSON.stringify(keys.demoEventIntro)}),
+      interactive: intlMsg.t(${JSON.stringify(keys.demoInteractive)}),
+      documentation: intlMsg.t(${JSON.stringify(keys.demoDocumentation)}),
+      documentationDescription: intlMsg.t(${JSON.stringify(keys.demoDocumentationDescription)}),
+      visual: intlMsg.t(${JSON.stringify(keys.demoVisual)}),
+      code: intlMsg.t(${JSON.stringify(keys.demoCode)}),
+      caseLabel: intlMsg.t(${JSON.stringify(keys.demoCaseLabel)}),
+      languageLabel: intlMsg.t(${JSON.stringify(keys.demoLanguageLabel)}),
+      languageEn: intlMsg.t(${JSON.stringify(keys.demoLanguageEn)}),
+      languageEs: intlMsg.t(${JSON.stringify(keys.demoLanguageEs)}),
+      hideUi: intlMsg.t(${JSON.stringify(keys.demoHideUi)}),
+      showUi: intlMsg.t(${JSON.stringify(keys.demoShowUi)}),
       resolution: intlMsg.t(${JSON.stringify(keys.demoResolution)}),
       viewport: intlMsg.t(${JSON.stringify(keys.demoViewport)}),
       events: intlMsg.t(${JSON.stringify(keys.demoEvents)}),
       eventsEmpty: intlMsg.t(${JSON.stringify(keys.demoEventsEmpty)}),
       customWidth: intlMsg.t(${JSON.stringify(keys.demoCustomWidth)}),
       customHeight: intlMsg.t(${JSON.stringify(keys.demoCustomHeight)}),
-      apply: intlMsg.t(${JSON.stringify(keys.demoApply)})
+      apply: intlMsg.t(${JSON.stringify(keys.demoApply)}),
+      responsive: intlMsg.t(${JSON.stringify(keys.demoResponsive)}),
+      fluid: intlMsg.t(${JSON.stringify(keys.demoFluid)}),
+      mobile: intlMsg.t(${JSON.stringify(keys.demoMobile)}),
+      tablet: intlMsg.t(${JSON.stringify(keys.demoTablet)}),
+      desktop: intlMsg.t(${JSON.stringify(keys.demoDesktop)}),
+      largeDesktop: intlMsg.t(${JSON.stringify(keys.demoLargeDesktop)}),
+      open: intlMsg.t(${JSON.stringify(keys.demoOpen)}),
+      copy: intlMsg.t(${JSON.stringify(keys.demoCopy)}),
+      copied: intlMsg.t(${JSON.stringify(keys.demoCopied)}),
+      scope: intlMsg.t(${JSON.stringify(keys.demoScope)}),
+      scopeDescription: intlMsg.t(${JSON.stringify(keys.demoScopeDescription)}),
+      api: intlMsg.t(${JSON.stringify(keys.demoApi)}),
+      apiDescription: intlMsg.t(${JSON.stringify(keys.demoApiDescription)}),
+      apiColumn: intlMsg.t(${JSON.stringify(keys.demoApiColumn)}),
+      contractColumn: intlMsg.t(${JSON.stringify(keys.demoContractColumn)}),
+      evidenceColumn: intlMsg.t(${JSON.stringify(keys.demoEvidenceColumn)}),
+      htmlSnippet: intlMsg.t(${JSON.stringify(keys.demoHtmlSnippet)}),
+      jsSnippet: intlMsg.t(${JSON.stringify(keys.demoJsSnippet)}),
+      noCase: intlMsg.t(${JSON.stringify(keys.demoNoCase)})
     }
   }, window.location.origin);
-}
-
-function textElement(tagName, text) {
-  const element = document.createElement(tagName);
-  element.textContent = text;
-  return element;
 }
 
 async function setLanguage(language) {
@@ -458,37 +402,37 @@ async function setLanguage(language) {
 }
 
 function renderDemo() {
-  const title = textElement('h1', intlMsg.t(${JSON.stringify(keys.demoTitle)}));
-  const controls = document.createElement('div');
-  const english = textElement('button', intlMsg.t(${JSON.stringify(keys.demoLanguageEn)}));
-  const spanish = textElement('button', intlMsg.t(${JSON.stringify(keys.demoLanguageEs)}));
+  const shell = document.createElement('section');
+  shell.className = 'inner-demo';
   const component = document.createElement('${name}');
   const eventOutput = document.createElement('output');
 
-  english.type = 'button';
-  spanish.type = 'button';
+  eventOutput.className = 'inner-demo-event';
   eventOutput.dataset.event = '';
   eventOutput.setAttribute('aria-live', 'polite');
   eventOutput.textContent = intlMsg.t(${JSON.stringify(keys.demoEventEmpty)});
-  english.addEventListener('click', () => {
-    void setLanguage('en');
-  });
-  spanish.addEventListener('click', () => {
-    void setLanguage('es');
-  });
   component.addEventListener('${name}-continue', event => {
     eventOutput.textContent = intlMsg.t(${JSON.stringify(keys.demoEvent)}, { event: event.type });
     window.parent.postMessage({ source: 'academy-demo', kind: 'event', eventType: event.type, detail: event.detail }, window.location.origin);
   });
-  controls.append(english, spanish);
-  root.replaceChildren(title, controls, component, eventOutput);
+  shell.append(component, eventOutput);
+  root.replaceChildren(shell);
   document.title = intlMsg.t(${JSON.stringify(keys.demoTitle)});
 }
+
+window.addEventListener('message', event => {
+  if (event.source !== window.parent || event.origin !== window.location.origin) return;
+  const message = event.data;
+  if (!message || message.source !== 'academy-demo-host' || message.kind !== 'language') return;
+  if (message.language !== 'en' && message.language !== 'es') return;
+  void setLanguage(message.language);
+});
 
 publishLabels();
 renderDemo();
 `;
 }
+
 
 function unitTestSource(name, className) {
   return `import catalogs from './locales/locales.json' with { type: 'json' };
@@ -755,13 +699,14 @@ function e2ePlan(name) {
   return ScaffoldPlan.empty()
     .addFile('playwright.config.js', `import { defineConfig } from '@playwright/test';
 
+const executablePath = process.env.ACADEMY_PLAYWRIGHT_EXECUTABLE_PATH;
+const channel = process.env.OPEN_CELLS_PLAYWRIGHT_CHANNEL ?? 'chrome';
+
 export default defineConfig({
   testDir: './e2e',
   use: {
     baseURL: 'http://127.0.0.1:4173',
-    launchOptions: process.env.ACADEMY_PLAYWRIGHT_EXECUTABLE_PATH
-      ? { executablePath: process.env.ACADEMY_PLAYWRIGHT_EXECUTABLE_PATH }
-      : {}
+    ...(executablePath ? { launchOptions: { executablePath } } : { channel })
   },
   webServer: { command: 'cells component:dev --host 127.0.0.1 --port 4173 --strictPort --no-open', url: 'http://127.0.0.1:4173', reuseExistingServer: false }
 });
@@ -773,14 +718,17 @@ test('runs the generated demo cases, viewport controls, locale switch, and event
   await page.goto('/demo/');
   const helper = page.locator('academy-demo-helper');
   await expect(helper).toBeVisible();
-  await expect(helper.locator('[data-case="0"]')).toHaveCount(1);
-  await page.getByRole('combobox', { name: 'Viewport preset' }).selectOption('desktop');
-  await expect(page.locator('iframe[data-demo-frame]')).toHaveCSS('width', '1024px');
+  await expect(helper.getByRole('combobox', { name: 'Case' })).toHaveCount(1);
+  await helper.getByRole('button', { name: 'Desktop', exact: true }).click();
+  await expect(helper.locator('[data-device-frame]')).toHaveCSS('width', '960px');
 
   const demo = page.frameLocator('iframe[data-demo-frame]');
   await expect(demo.locator('${name}')).toBeVisible();
   await expect(demo.getByText('${name.replace(/-/g, ' ')} ready')).toBeVisible();
-  await demo.getByRole('button', { name: 'Spanish' }).click();
+  await helper.getByRole('tab', { name: 'Code' }).click();
+  await expect(helper.locator('[data-code-view]')).toBeVisible();
+  await helper.getByRole('tab', { name: 'Visual' }).click();
+  await helper.getByRole('button', { name: 'Spanish' }).click();
   await expect(demo.locator('html[lang="es"]')).toHaveAttribute('lang', 'es');
   await expect(demo.getByText('${name.replace(/-/g, ' ')} listo')).toBeVisible();
   await demo.getByRole('button', { name: 'Continuar' }).click();
@@ -829,6 +777,9 @@ export function createComponentPayload(input = {}) {
   let plan = ScaffoldPlan.empty()
     .addDirectory('test/coverage')
     .addDependency('eslint', '9.39.4', 'dev')
+    .addDependency('@web/test-runner', '0.19.0', 'dev')
+    .addDependency('@web/test-runner-playwright', '0.11.0', 'dev')
+    .addDependency('@web/test-runner-junit-reporter', '0.8.0', 'dev')
     .addFile('index.html', rootIndexSource(name))
     .addFile('index.js', `export { ${className} } from './src/${className}.js';\n`)
     .addFile(`${name}.js`, entrypointSource(name, className))

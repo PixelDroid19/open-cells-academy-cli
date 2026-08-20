@@ -177,6 +177,9 @@ test('component recipe publishes component-only guidance and a source-specific c
   assert.match(readme, /80 percent/);
   assert.match(readme, /100 percent/);
   assert.match(readme, /cells component:documentation/);
+  assert.match(readme, /Visual, Code, and Documentation/);
+  assert.match(readme, /language controls stay in the workbench/);
+  assert.match(readme, /Fluid/);
   assert.doesNotMatch(readme, /@open-cells\/core|Academy channels|browser facade/i);
   assert.equal(appManifest.dependencies['@open-cells/core'], '1.2.1');
   assert.equal(manifest.devDependencies['@vitest/coverage-v8'], '3.2.4');
@@ -244,12 +247,45 @@ test('component recipe publishes the complete modern component package tree', ()
   assert.match(files.get('demo/demo-build.js'), /import '\.\/academy-demo-helper\.js';/);
   assert.match(files.get('demo/index.html'), /academy-demo-helper/);
   assert.match(files.get('demo/index.html'), /academy-demo-case/);
+  assert.match(files.get('demo/index.html'), /component-tag="academy-card"/);
   assert.match(files.get('demo/index.html'), /<title>academy-card demo<\/title>/);
   assert.match(files.get('demo/basic.html'), /<title>academy-card basic demo<\/title>/);
-  assert.match(files.get('demo/academy-demo-helper.js'), /resolution/);
-  assert.match(files.get('demo/academy-demo-helper.js'), /customViewportWidth/);
-  assert.match(files.get('demo/academy-demo-helper.js'), /message\.kind !== 'event'/);
+  const demoHelper = files.get('demo/academy-demo-helper.js');
+  assert.match(demoHelper, /data-view="visual"/);
+  assert.match(demoHelper, /data-view="code"/);
+  assert.match(demoHelper, /data-view="documentation"/);
+  assert.match(demoHelper, /data-language="en"/);
+  assert.match(demoHelper, /data-language="es"/);
+  assert.match(demoHelper, /data-preset="fluid"/);
+  assert.match(demoHelper, /data-hide-ui/);
+  assert.match(demoHelper, /data-open/);
+  assert.match(demoHelper, /data-event-latest/);
+  assert.match(demoHelper, /academy-demo-host/);
+  assert.match(demoHelper, /message\.kind !== 'event'/);
+  assert.match(demoHelper, /data-label="apiColumn"/);
+  assert.match(demoHelper, /data-label="contractColumn"/);
+  assert.match(demoHelper, /data-label="evidenceColumn"/);
+  assert.match(demoHelper, /return this\.getAttribute\('component-tag'\) \|\| 'academy-component'/);
   assert.equal(JSON.parse(files.get('custom-elements.json')).schemaVersion, '1.0.0');
+});
+
+test('component demo keeps language controls in the workbench instead of the iframe specimen', () => {
+  const files = fileMap(composeRecipe('component', {
+    kind: 'component',
+    name: 'academy-card',
+    namespace: '@academy',
+    cellsVersion: '5'
+  }));
+  const demo = files.get('demo/demo.js');
+  const basic = files.get('demo/basic.html');
+
+  assert.match(demo, /kind: 'labels',[\s\S]*language: document\.documentElement\.lang/);
+  assert.match(demo, /source !== 'academy-demo-host'/);
+  assert.match(demo, /message\.kind !== 'language'/);
+  assert.doesNotMatch(demo, /document\.createElement\('button'\)/);
+  assert.doesNotMatch(demo, /controls\.append/);
+  assert.match(basic, /place-items: center/);
+  assert.match(basic, /\.inner-demo-event/);
 });
 
 test('component demo publishes the selected document language and E2E asserts Spanish document state', () => {
@@ -261,10 +297,21 @@ test('component demo publishes the selected document language and E2E asserts Sp
   }));
   const demo = files.get('demo/demo.js');
   const e2e = files.get('e2e/academy-card.spec.js');
+  const playwrightConfig = files.get('playwright.config.js');
+  const readme = files.get('README.md');
 
   assert.match(demo, /document\.documentElement\.lang = 'en';/);
   assert.match(demo, /async function setLanguage\(language\) \{[\s\S]*document\.documentElement\.lang = language;/);
   assert.match(e2e, /html\[lang="es"\]/);
+  assert.match(e2e, /helper\.getByRole\('button', \{ name: 'Spanish' \}\)/);
+  assert.match(e2e, /\[data-device-frame\]/);
+  assert.match(e2e, /name: 'Desktop', exact: true/);
+  assert.match(e2e, /getByRole\('tab', \{ name: 'Code' \}\)/);
+  assert.doesNotMatch(e2e, /demo\.getByRole\('button', \{ name: 'Spanish' \}\)/);
+  assert.ok(e2e.indexOf("name: 'Code'") < e2e.indexOf("name: 'Spanish'"));
+  assert.match(playwrightConfig, /OPEN_CELLS_PLAYWRIGHT_CHANNEL \?\? 'chrome'/);
+  assert.match(readme, /npm run e2e/);
+  assert.match(readme, /OPEN_CELLS_PLAYWRIGHT_CHANNEL/);
 });
 
 test('component recipe generates an independent scoped educational component with deterministic localizations', () => {
@@ -315,6 +362,9 @@ test('component recipe generates an independent scoped educational component wit
   assert.equal(manifest.devDependencies['happy-dom'], '20.11.2');
   assert.equal(manifest.devDependencies.vite, '7.3.6');
   assert.equal(manifest.devDependencies.eslint, '9.39.4');
+  assert.equal(manifest.devDependencies['@web/test-runner'], '0.19.0');
+  assert.equal(manifest.devDependencies['@web/test-runner-playwright'], '0.11.0');
+  assert.equal(manifest.devDependencies['@web/test-runner-junit-reporter'], '0.8.0');
 
   assert.match(component, /import \{ ScopedElementsMixin \} from '@open-wc\/scoped-elements\/lit-element\.js';/);
   assert.match(component, /import \{ WidgetMixin as widgetMixin \} from '\.\/mixins\/WidgetMixin\.js';/);
@@ -402,7 +452,8 @@ test('component E2E is conditional and exercises localized component events', ()
   assert.match(e2e.get('playwright.config.js'), /cells component:dev --host 127\.0\.0\.1 --port 4173 --strictPort --no-open/);
   assert.match(e2e.get('e2e/academy-card.spec.js'), /page\.goto\('\/demo\/'\)/);
   assert.match(e2e.get('e2e/academy-card.spec.js'), /frameLocator\('iframe\[data-demo-frame\]'\)/);
-  assert.match(e2e.get('e2e/academy-card.spec.js'), /Viewport preset/);
+  assert.match(e2e.get('e2e/academy-card.spec.js'), /data-device-frame/);
+  assert.match(e2e.get('e2e/academy-card.spec.js'), /getByRole\('tab', \{ name: 'Code' \}\)/);
   assert.match(e2e.get('e2e/academy-card.spec.js'), /academy-card-continue/);
   assert.match(e2e.get('e2e/academy-card.spec.js'), /Spanish/);
   assert.match(e2e.get('e2e/academy-card.spec.js'), /academy card listo/);

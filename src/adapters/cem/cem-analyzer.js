@@ -76,6 +76,24 @@ function sameIdentity(left, right) {
   return left.dev === right.dev && left.ino === right.ino;
 }
 
+function portableReference(root, value) {
+  if (typeof value !== 'string' || !path.isAbsolute(value)) return value;
+  const normalized = path.resolve(value);
+  if (!isWithin(root, normalized)) return value;
+  return path.relative(root, normalized).split(path.sep).join('/');
+}
+
+function portableManifestPaths(root, value) {
+  if (Array.isArray(value)) return value.map(entry => portableManifestPaths(root, entry));
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [
+    key,
+    key === 'path' || key === 'module'
+      ? portableReference(root, entry)
+      : portableManifestPaths(root, entry)
+  ]));
+}
+
 /**
  * Adapter around the injected public Custom Elements Manifest Analyzer API.
  * The composition root resolves `create`, `ts`, and `litPlugin`, so importing
@@ -115,6 +133,6 @@ export class CemAnalyzer {
     if (!isRecord(manifest) || typeof manifest.schemaVersion !== 'string' || !Array.isArray(manifest.modules)) {
       throw typedError('DOC_ANALYZER_FAILED');
     }
-    return manifest;
+    return portableManifestPaths(session.root, manifest);
   }
 }

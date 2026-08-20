@@ -442,6 +442,7 @@ test('red: CLI 5 scripts and E2E server use the local Cells configuration workfl
   assert.equal(modernMetadata.scripts.dev, 'cells app:dev -c dev.js');
   assert.equal(modernMetadata.scripts.build, 'cells app:build -c prod.js');
   assert.equal(modernMetadata.scripts.preview, 'cells app:preview -c prod.js');
+  assert.equal(modernMetadata.scripts.test, 'cells app:test');
   assert.match(playwrightConfig, /cells app:dev -c dev\.js/);
   assert.doesNotMatch(playwrightConfig, /npm run dev/);
   assert.deepEqual(Object.keys(legacyMetadata.scripts).sort(), ['academy:version', 'build', 'lint', 'locales', 'serve', 'test']);
@@ -1121,6 +1122,8 @@ test('red: Bridge 4 pages render a Cells template contract instead of a plain Li
     assert.match(template, /static styles = css/);
     assert.match(template, /state="inactive"/);
     assert.match(template, /slot name="app-main-content"/);
+    assert.match(template, /<section class="page-main">/);
+    assert.doesNotMatch(template, /<main>/);
   }
   assert.match(catalogPage, /<catalog-page-template[\s\S]*data-cells-type="template"/);
   assert.doesNotMatch(catalogPage, /state="active"/);
@@ -1178,8 +1181,13 @@ test('contract: CLI 5 E2E material is an optional Bridge 4 overlay', () => {
   assert.equal(overlay.has('playwright.config.js'), true);
   assert.equal(overlay.has('e2e/bridge4-app.spec.js'), true);
   assert.equal(overlayMetadata.devDependencies.playwright, '1.62.1');
+  assert.equal(overlayMetadata.devDependencies['@axe-core/playwright'], '^4.10.0');
   assert.match(overlay.get('e2e/bridge4-app.spec.js'), /toHaveURL/);
   assert.match(overlay.get('e2e/bridge4-app.spec.js'), /introduction/);
+  assert.match(overlay.get('e2e/bridge4-app.spec.js'), /AxeBuilder/);
+  assert.match(overlay.get('e2e/bridge4-app.spec.js'), /expect\(catalog\)\.toBeHidden\(\)/);
+  assert.match(overlay.get('e2e/bridge4-app.spec.js'), /expect\(lesson\)\.toBeVisible\(\)/);
+  assert.match(overlay.get('e2e/bridge4-app.spec.js'), /expect\(violations\)\.toEqual\(\[\]\)/);
 });
 
 test('contract: CLI 5 app routes and pages declare public Open Cells navigation lifecycle boundaries', () => {
@@ -1187,6 +1195,7 @@ test('contract: CLI 5 app routes and pages declare public Open Cells navigation 
   const bootstrap = files.get('app/scripts/app.js');
   const channels = files.get('app/scripts/channels.js');
   const routes = files.get('app/scripts/app-routes.js');
+  const shell = files.get('app/tpls/academy-app-shell.js');
   const catalog = files.get('app/pages/catalog-page/catalog-page.js');
   const lesson = files.get('app/pages/lesson-page/lesson-page.js');
 
@@ -1198,6 +1207,7 @@ test('contract: CLI 5 app routes and pages declare public Open Cells navigation 
   assert.match(routes, /async action\(\)/);
   assert.match(routes, /import\('\.\.\/pages\/catalog-page\/catalog-page\.js'\)/);
   assert.match(routes, /import\('\.\.\/pages\/lesson-page\/lesson-page\.js'\)/);
+  assert.match(shell, /class="academy-shell-language" role="status"/);
   assert.match(catalog, /PageMixin\(LitElement\)/);
   assert.match(catalog, /navigate\('lesson', \{ lessonId \}\)/);
   assert.match(channels, /academy-progress/);

@@ -111,6 +111,8 @@ test('red: document component writes a standards-conformant custom-elements.json
   assert.equal(manifest.schemaVersion, '1.0.0');
   assert.ok(Array.isArray(manifest.modules));
   const buttonModule = manifest.modules.find(module => module.path.includes('academy-button'));
+  assert.equal(path.isAbsolute(buttonModule.path), false);
+  assert.equal(buttonModule.path, 'src/academy-button.js');
   const button = buttonModule.declarations.find(declaration => declaration.name === 'AcademyButton');
   assert.equal(button.tagName, 'academy-button');
   assert.equal(button.superclass.name, 'LitElement');
@@ -125,6 +127,7 @@ test('red: document component writes a standards-conformant custom-elements.json
   assert.match(readme, /AcademyButton/);
   assert.match(readme, /--academy-button-color/);
   assert.match(readme, /academy-action/);
+  assert.equal(readme.includes(root), false);
   assert.match(readme, /## CSS Shadow Parts/);
   assert.match(readme, /\| button \| Inner button\. \|/);
 

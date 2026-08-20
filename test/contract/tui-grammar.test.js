@@ -110,12 +110,12 @@ test('contract: cells in CI environment returns action help fallback', () => {
   assert.equal(parsed.action, 'help');
 });
 
-test('contract: legacy lit-components:serve plural alias resolves to component:dev', () => {
+test('contract: legacy lit-components:serve plural alias resolves to the Cells component serve command', () => {
   const registry = createCommandRegistry();
   const parsed = parseArgv(['lit-components:serve', '--port', '8080'], registry, {});
   assert.equal(parsed.ok, true);
   assert.equal(parsed.action, 'command');
-  assert.equal(parsed.command.name, 'component:dev');
+  assert.equal(parsed.command.name, 'component:serve');
   assert.equal(parsed.options.port, 8080);
 });
 

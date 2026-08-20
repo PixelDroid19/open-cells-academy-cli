@@ -107,6 +107,7 @@ test('contract: CLI 4 emits an Academy-owned compatibility runtime with only pub
   assert.match(files.get('app/scripts/app.js'), /mainNode/u);
   assert.match(files.get('app/pages/catalog-page/catalog-page.js'), /AcademyBridge3PageMixin/u);
   assert.match(files.get('app/tpls/index.tpl'), /data-academy-shell-language/u);
+  assert.match(files.get('app/tpls/index.tpl'), /data-academy-shell-language role="status"/u);
   const catalog = files.get('app/pages/catalog-page/catalog-page.js');
   for (const part of ['routes', 'pages', 'channels', 'data', 'i18n']) {
     assert.match(catalog, new RegExp(`data-learning-part="${part}"`));

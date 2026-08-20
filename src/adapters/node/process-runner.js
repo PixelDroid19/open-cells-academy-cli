@@ -435,6 +435,16 @@ export class NodeProcessRunner extends ProcessPort {
         return true;
       };
 
+      const waitForOwnedGroupExit = async () => {
+        for (let attempt = 0; attempt < GROUP_CHECK_ATTEMPTS; attempt += 1) {
+          if (!groupExists()) {
+            return true;
+          }
+          await delay(GROUP_CHECK_INTERVAL_MS);
+        }
+        return !groupExists();
+      };
+
       const finalizeWindowsClose = async result => {
         if (settled) {
           return;
@@ -555,6 +565,30 @@ export class NodeProcessRunner extends ProcessPort {
         interruptTimer = setTimeout(escalateToTerminate, prepared.interruptGraceMs);
       };
 
+      const finalizePosixClose = async result => {
+        let groupExited;
+        try {
+          groupExited = await waitForOwnedGroupExit();
+        } catch (cause) {
+          settle(typedError('TOOL_FAILED', { reason: 'OWNED_GROUP_CLEANUP_FAILED', result }, cause), result);
+          return;
+        }
+        if (settled) {
+          return;
+        }
+        if (groupExited) {
+          if (forcedFailure !== undefined) {
+            settleForcedFailure();
+          } else {
+            settle(undefined, result);
+          }
+          return;
+        }
+        if (forcedFailure === undefined) {
+          beginTermination({ code: 'TOOL_FAILED', reason: 'OWNED_GROUP_ORPHANED' });
+        }
+      };
+
       const stdoutHandler = chunk => {
         const output = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
         const exceeded = prepared.isServer
@@ -610,18 +644,7 @@ export class NodeProcessRunner extends ProcessPort {
           settle(typedError('TOOL_FAILED', { file: prepared.file, result }, childError), result);
           return;
         }
-        if (usesGroup) {
-          try {
-            if (groupExists()) {
-              beginTermination({ code: 'TOOL_FAILED', reason: 'OWNED_GROUP_ORPHANED' });
-              return;
-            }
-          } catch (cause) {
-            settle(typedError('TOOL_FAILED', { reason: 'OWNED_GROUP_CLEANUP_FAILED', result }, cause), result);
-            return;
-          }
-        }
-        settle(undefined, result);
+        void finalizePosixClose(result);
       };
 
       abortHandler = () => beginTermination({ code: 'INTERRUPTED', reason: 'ABORTED' });

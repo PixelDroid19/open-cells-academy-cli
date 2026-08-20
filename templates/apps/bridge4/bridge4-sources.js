@@ -250,7 +250,7 @@ export class AcademyAppShell extends LitElement {
         <a href="/#!/">\${t('shell.home', this.language)}</a>
         <a href="/#!/lesson/introduction">\${t('shell.lesson', this.language)}</a>
       </nav>
-      <span class="academy-shell-language" aria-label=\"\${t('shell.language', this.language)}\">\${this.language}</span>
+      <span class="academy-shell-language" role="status" aria-label=\"\${t('shell.language', this.language)}\">\${this.language}</span>
     </header><slot></slot>\`;
   }
 }
@@ -291,7 +291,7 @@ export class CatalogPageTemplate extends LitElement {
       <button type="button" data-language="es" @click=\${this.selectLanguage}>\${t('language.es', this.language)}</button>
     </nav>
     <header><slot name="app-header"></slot></header>
-    <main><slot name="app-main-content"></slot></main>
+    <section class="page-main"><slot name="app-main-content"></slot></section>
     <footer><slot name="app-footer"></slot></footer>\`;
   }
 }
@@ -320,7 +320,7 @@ export class LessonPageTemplate extends LitElement {
 
   render() {
     return html\`<header><slot name="app-header"></slot></header>
-    <main><slot name="app-main-content"></slot></main>
+    <section class="page-main"><slot name="app-main-content"></slot></section>
     <footer><slot name="app-footer"></slot></footer>\`;
   }
 }
@@ -720,13 +720,21 @@ export default defineConfig({
 }
 
 function e2eSpecSource() {
-  return `import { expect, test } from 'playwright/test';
+  return `import AxeBuilder from '@axe-core/playwright';
+import { expect, test } from 'playwright/test';
 
 test('opens a lesson through the generated named route', async ({ page }) => {
   await page.goto('/');
+  const catalog = page.locator('catalog-page');
+  const lesson = page.locator('lesson-page');
   await expect(page.getByRole('heading', { name: 'Learning catalog' })).toBeVisible();
   await page.getByRole('button', { name: 'Open lesson' }).click();
   await expect(page).toHaveURL(/lesson\\/introduction/);
+  await expect(page.getByRole('heading', { name: 'Lesson: introduction' })).toBeVisible();
+  await expect(catalog).toBeHidden();
+  await expect(lesson).toBeVisible();
+  const { violations } = await new AxeBuilder({ page }).analyze();
+  expect(violations).toEqual([]);
 });
 `;
 }

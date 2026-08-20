@@ -82,7 +82,7 @@ function indexTemplateSource() {
         <a href="#!/">Catalog</a>
         <a href="#!/lesson?lessonId=introduction">Lesson</a>
       </nav>
-      <span data-academy-shell-language aria-label="Language">en</span>
+      <span data-academy-shell-language role="status" aria-label="Language">en</span>
     </header>
     <main id="app__content" aria-live="polite"></main>
     <script type="module" src="scripts/app-module.js"></script>

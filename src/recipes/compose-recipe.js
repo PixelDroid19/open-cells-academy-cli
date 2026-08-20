@@ -88,7 +88,7 @@ function packageMetadata(options, dependencies) {
           lint: 'cells app:lint',
           locales: 'cells app:locales -c dev.js',
           preview: 'cells app:preview -c prod.js',
-          test: 'vitest run',
+          test: 'cells app:test',
           'test:a11y': 'vitest run test/unit'
         }
       : {
@@ -127,17 +127,23 @@ function applicationReadme() {
   return '# Cells Academy scaffold\n\nThis generated application uses `@open-cells/core@1.2.1` through an Academy-owned browser facade. Start the app once with a valid main node and named routes; navigate only by a declared route name.\n\nUse the local Cells workflow: `cells app:dev -c dev.js`, `cells app:build -c prod.js`, and `cells app:preview -c prod.js`.\n\nUse Academy channels in the form `academy:<appId>:<feature>:<event>`. The only supported publish option is `{ sessionStorage: true }`; unsupported options are rejected. Core retains the last published value, so a later subscriber receives it once. `subscribe` returns an idempotent cleanup function that stops later callbacks.\n\nThe Core runtime is browser-only: SSR and prerendering are unsupported and fail with an Academy diagnostic before browser-only runtime modules load. Task 5 does not register a service worker.\n';
 }
 
-function componentReadme() {
-  return '# Cells Academy component\n\nThis generated component teaches independent Cells-style composition with `WidgetMixin(ScopedElementsMixin(LitElement))`. `WidgetMixin` and the neutral Academy UI constructors are teaching adapters, not native Bridge or design-system APIs. The public host registers the Academy UI constructors in `static get scopedElements()`, keeping `academy-type-text` and `academy-button-default` out of the global custom-elements registry.\n\nThe package exports the class from `index.js` without global registration. `<component-name>.js` is the opt-in tag entry point and registers the host once. Component-owned labels use `this.t(...)`. Its public continuation action calls `this.emitEvent(\'continue\', { component: \'<component-name>\' })`, which emits the prefixed `<component-name>-continue` event with bubbling, composed, and cancelable defaults.\n\nThe SCSS source and aligned `.css.js` runtime style module live in `src/`. The identical EN/ES catalogs live at `locales/locales.json`, `demo/locales/locales.json`, and `test/unit/locales/locales.json`. The demo installs IntlMsg before loading the component and lets users switch English and Spanish. The generated `academy-demo-helper` follows the Cells demo convention: it hosts `academy-demo-case` entries in iframes, captures opted-in component events, and lets learners switch responsive, desktop, tablet, mobile, or custom viewport sizes. `custom-elements.json` documents the initial public API; `cells component:documentation` regenerates it and `README.md` from source.\n\nThe public Open Cells minimum is 80 percent for statements, branches, functions, and lines. This small teaching component intentionally enforces a stricter 100 percent source-only coverage gate. Use `cells component:lint`, `cells component:test`, `cells component:test --coverage`, and `cells component:test --wtr` for test flows, `cells component:locales` to refresh demo and test catalogs, `cells component:documentation` to refresh docs, `cells component:build:demo` to build the demo, and `cells component:dev` to serve it.\n';
+function componentReadme(options) {
+  const e2e = options.e2e
+    ? '\nThe optional `npm run e2e` flow uses an installed Google Chrome channel by default. Set `OPEN_CELLS_PLAYWRIGHT_CHANNEL` to select another installed channel, or `ACADEMY_PLAYWRIGHT_EXECUTABLE_PATH` to use an explicit local browser executable. The scaffold never downloads a browser implicitly.\n'
+    : '';
+  return '# Cells Academy component\n\nThis generated component teaches independent Cells-style composition with `WidgetMixin(ScopedElementsMixin(LitElement))`. `WidgetMixin` and the neutral Academy UI constructors are teaching adapters, not native Bridge or design-system APIs. The public host registers the Academy UI constructors in `static get scopedElements()`, keeping `academy-type-text` and `academy-button-default` out of the global custom-elements registry.\n\nThe package exports the class from `index.js` without global registration. `<component-name>.js` is the opt-in tag entry point and registers the host once. Component-owned labels use `this.t(...)`. Its public continuation action calls `this.emitEvent(\'continue\', { component: \'<component-name>\' })`, which emits the prefixed `<component-name>-continue` event with bubbling, composed, and cancelable defaults.\n\nThe SCSS source and aligned `.css.js` runtime style module live in `src/`. The identical EN/ES catalogs live at `locales/locales.json`, `demo/locales/locales.json`, and `test/unit/locales/locales.json`. The demo installs IntlMsg before loading the component. Its language controls stay in the workbench while the iframe remains focused on the component specimen. The generated `academy-demo-helper` offers Visual, Code, and Documentation views, Mobile, Tablet, Desktop, Large Desktop, Fluid, and custom viewport sizes, opening and UI-hiding controls, plus a bounded event inspector. `custom-elements.json` documents the initial public API; `cells component:documentation` regenerates it and `README.md` from source.\n\nThe public Open Cells minimum is 80 percent for statements, branches, functions, and lines. This small teaching component intentionally enforces a stricter 100 percent source-only coverage gate. Use `cells component:lint`, `cells component:test`, `cells component:test --coverage`, and `cells component:test --wtr` for test flows, `cells component:locales` to refresh demo and test catalogs, `cells component:documentation` to refresh docs, `cells component:build:demo` to build the demo, and `cells component:dev` to serve it.\n' + e2e;
 }
 
 function legacyComponentReadme(options) {
   const profile = options.componentProfile === undefined ? `Lit ${options.componentBase}` : `Polymer ${options.componentProfile}`;
   const command = options.componentProfile === undefined ? 'lit-component' : 'component';
   const demo = options.componentProfile === undefined
-    ? 'The Lit demo follows the Cells component starter shape with a Basic case, local EN/ES catalog, viewport controls, and a captured continuation event.'
+    ? 'The Lit demo follows the Cells component starter shape with a Basic case and local EN/ES catalog. Its workbench owns language selection, Visual, Code, and Documentation views, responsive viewport presets, opening and UI-hiding controls, and an inspectable continuation-event stream.'
     : 'The Polymer profile stays intentionally minimal so its component, behavior, data-manager, or theme contract remains easy to inspect.';
-  return `# Open Cells Academy ${profile} component\n\nThis neutral educational scaffold records \`cellsVersion: "4"\` and keeps the CLI 4 component workflow visible. It contains no private design-system, endpoint, or business dependency.\n\n${demo}\n\nUse \`cells ${command}:serve\`, \`cells ${command}:test\`, \`cells ${command}:locales\`, and \`cells ${command}:documentation\`.\n`;
+  const e2e = options.e2e
+    ? '\nThe optional `npm run e2e` flow uses an installed Google Chrome channel. Set `OPEN_CELLS_PLAYWRIGHT_CHANNEL` to select another installed channel. The scaffold never downloads a browser implicitly.\n'
+    : '';
+  return `# Open Cells Academy ${profile} component\n\nThis neutral educational scaffold records \`cellsVersion: "4"\` and keeps the CLI 4 component workflow visible. It contains no private design-system, endpoint, or business dependency.\n\n${demo}\n\nUse \`cells ${command}:serve\`, \`cells ${command}:test\`, \`cells ${command}:locales\`, and \`cells ${command}:documentation\`.\n${e2e}`;
 }
 
 function structuralFiles(options, capabilities, dependencies) {
@@ -166,7 +172,7 @@ function structuralFiles(options, capabilities, dependencies) {
     .addFile('package.json', stableJson(packageMetadata(options, dependencies)));
   if (!bridge4Application && !bridge3Application) {
     plan = plan.addFile('README.md', options.kind === 'component'
-      ? (options.cellsVersion === '4' ? legacyComponentReadme(options) : componentReadme())
+      ? (options.cellsVersion === '4' ? legacyComponentReadme(options) : componentReadme(options))
       : applicationReadme());
   }
   if (options.kind === 'app' && !bridge4Application && !bridge3Application) {

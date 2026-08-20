@@ -251,6 +251,28 @@ test('POSIX reaps an owned descendant when its leader exits successfully before 
   }
 });
 
+test('POSIX allows an owned worker to finish naturally just after its successful leader', { skip: process.platform === 'win32' }, async () => {
+  const runner = new NodeProcessRunner();
+  const root = await makeRoot();
+  const workerSource = 'setTimeout(() => {}, 60);';
+  const leaderSource = [
+    "import { spawn } from 'node:child_process';",
+    `spawn(process.execPath, ['--eval', ${JSON.stringify(workerSource)}], { stdio: 'ignore' });`,
+    'process.exit(0);'
+  ].join(' ');
+
+  try {
+    const result = await runner.run({
+      file: process.execPath,
+      args: ['--input-type=module', '--eval', leaderSource],
+      cwd: root
+    });
+    assert.equal(result.exitCode, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('POSIX termination sends SIGINT, then SIGTERM, then SIGKILL to the exact owned group', { skip: process.platform === 'win32' }, async () => {
   const signals = [];
   const runner = new NodeProcessRunner({
